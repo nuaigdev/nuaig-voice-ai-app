@@ -6,6 +6,7 @@ import { useClient } from './providers/ClientConfigProvider';
 import { EmptyNote, toneVar } from './ui';
 import { callCategoriesFor } from '@/clients/categories';
 import { formatClock, humanize, outcomeOf } from '@/lib/callStats';
+import { formatInTz } from '@/lib/time';
 import type { CallRow } from '@/types';
 
 export function sentimentClass(s: string | null): string {
@@ -15,12 +16,11 @@ export function sentimentClass(s: string | null): string {
   return 'badge badge-muted';
 }
 
-function dateParts(iso: string | null): { day: string; time: string } {
+function dateParts(iso: string | null, tz: string): { day: string; time: string } {
   if (!iso) return { day: '—', time: '' };
-  const d = new Date(iso);
   return {
-    day: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    day: formatInTz(iso, tz, { month: 'short', day: 'numeric' }),
+    time: formatInTz(iso, tz, { hour: 'numeric', minute: '2-digit' }),
   };
 }
 
@@ -72,7 +72,7 @@ export function CallLogsTable({ logs, compact = false, onRowClick }: CallLogsTab
           {logs.map((entry) => {
             const cat = categories[entry.primary_category];
             const outcome = outcomeOf(entry);
-            const when = dateParts(entry.start_time);
+            const when = dateParts(entry.start_time, client.timezone);
             const outbound = entry.direction === 'outbound';
             return (
               <tr

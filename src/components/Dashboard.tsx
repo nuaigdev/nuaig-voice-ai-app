@@ -10,6 +10,7 @@ import { Card, EmptyNote, ErrorState, PageHeader, toneVar } from './ui';
 import { callCategoriesFor } from '@/clients/categories';
 import { PRODUCT } from '@/config/product';
 import { dailySeries, filterByRange, formatDuration, humanize, previousPeriod, resolveRange, summarize } from '@/lib/callStats';
+import { tzAbbrev } from '@/lib/time';
 import type { CallRow, DateRange, DateSeg } from '@/types';
 
 const EMPTY_RANGE_NOTE = 'No calls in this window yet. Try widening the date range.';
@@ -95,11 +96,12 @@ export function Dashboard({
   const client = useClient();
   const categories = useMemo(() => callCategoriesFor(client), [client]);
 
-  const range = useMemo(() => resolveRange(dateSeg, customRange), [dateSeg, customRange]);
-  const filtered = useMemo(() => filterByRange(calls, range), [calls, range]);
+  const tz = client.timezone;
+  const range = useMemo(() => resolveRange(dateSeg, customRange, tz), [dateSeg, customRange, tz]);
+  const filtered = useMemo(() => filterByRange(calls, range, tz), [calls, range, tz]);
   const stats = useMemo(() => summarize(filtered), [filtered]);
-  const prevStats = useMemo(() => summarize(filterByRange(calls, previousPeriod(range))), [calls, range]);
-  const series = useMemo(() => dailySeries(calls, range), [calls, range]);
+  const prevStats = useMemo(() => summarize(filterByRange(calls, previousPeriod(range), tz)), [calls, range, tz]);
+  const series = useMemo(() => dailySeries(calls, range, tz), [calls, range, tz]);
 
   const recentCalls = useMemo(
     () => [...filtered].sort((a, b) => (b.start_time || '').localeCompare(a.start_time || '')).slice(0, 6),
@@ -156,7 +158,7 @@ export function Dashboard({
       <PageHeader
         eyebrow={`${client.name} · Voice agent performance`}
         title="Overview"
-        description={`How ${PRODUCT.name} is serving ${client.name} ${client.audience}, live from the voice agent.`}
+        description={`How ${PRODUCT.name} is serving ${client.name} ${client.audience}, live from the voice agent. Times in ${tzAbbrev(tz)}.`}
         actions={
           <RangeControl dateSeg={dateSeg} onDateSegChange={onDateSegChange} customLabel={customLabel} onApplyCustomRange={onApplyCustomRange} />
         }

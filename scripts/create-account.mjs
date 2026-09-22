@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Creates (or updates) a fixed console account with a role, via the local
-// Supabase instance's Admin API. There's no signup flow or user-management UI -
-// this is how accounts get provisioned/rotated. Requires `npx supabase start`
-// to be running.
+// Creates (or updates) a console account with a role, via the Admin API of the
+// Supabase project in .env.local (interim sign-in; the login approach is not
+// finalized). There's no signup flow or user-management UI - this is how
+// accounts get provisioned/rotated.
 //
 // Usage: npm run create-account -- "you@x.com" "a-password" admin
 
@@ -27,7 +27,7 @@ if (!email || !password || (role !== 'admin' && role !== 'user')) {
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || readEnvLocal('NEXT_PUBLIC_SUPABASE_URL');
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || readEnvLocal('SUPABASE_SERVICE_ROLE_KEY');
 if (!url || !serviceKey) {
-  console.error('NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not found in .env.local (run `npx supabase start` first).');
+  console.error('NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not found in .env.local.');
   process.exit(1);
 }
 

@@ -1,20 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentTransferTool, syncDepartmentTransfers, type DepartmentTransferInput } from '@/lib/retell';
+import { getLiveRouting, syncDepartmentTransfers, type DepartmentTransferInput } from '@/lib/retell';
 import { requireSession, requireAdmin } from '@/lib/auth';
-import { isDemoMode } from '@/lib/demo';
+import { getDemoRouting, isDemoMode, setDemoRouting } from '@/lib/demo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/** The departments currently live on the agent's transfer_call tool (see LiveRouting). */
 export async function GET() {
   const session = await requireSession();
   if (session instanceof NextResponse) return session;
 
-  if (isDemoMode()) return NextResponse.json({ tool: null });
+  if (isDemoMode()) return NextResponse.json(getDemoRouting());
 
   try {
-    const tool = await getCurrentTransferTool();
-    return NextResponse.json({ tool });
+    return NextResponse.json(await getLiveRouting());
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error fetching the transfer_call tool';
     return NextResponse.json({ error: message }, { status: 502 });
@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Demo mode validates the payload like the real path but doesn't touch any agent.
-  if (isDemoMode()) return NextResponse.json({ tool: null, departments });
+  // Demo mode validates the payload like the real path but only updates an in-memory copy.
+  if (isDemoMode()) return NextResponse.json({ tool: null, routing: setDemoRouting(departments) });
 
   try {
     const tool = await syncDepartmentTransfers(departments);

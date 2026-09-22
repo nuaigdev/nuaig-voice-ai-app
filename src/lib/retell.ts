@@ -34,7 +34,15 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isRetryableStatus(status: number): boolean {
-  return status === 502 || status === 503 || status === 504;
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+/** Backoff before the next attempt; honors Retry-After (seconds) on 429s, capped at 10s. */
+function retryDelayMs(res: Response | null, attempt: number): number {
+  const header = res?.headers.get('retry-after');
+  const seconds = header ? Number(header) : NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 10_000);
+  return (res?.status === 429 ? 1000 : 500) * attempt;
 }
 
 interface RetellFetchOptions {
@@ -75,7 +83,7 @@ async function retellFetch<T>(path: string, init?: RequestInit, opts?: RetellFet
         ? `Retell API ${path} timed out after ${timeoutMs / 1000}s`
         : `Retell API ${path} request failed: ${err instanceof Error ? err.message : String(err)}`;
       if (attempt < maxAttempts) {
-        await sleep(500 * attempt);
+        await sleep(retryDelayMs(null, attempt));
         continue;
       }
       throw new Error(message);
@@ -87,7 +95,7 @@ async function retellFetch<T>(path: string, init?: RequestInit, opts?: RetellFet
 
     const body = await res.text().catch(() => '');
     if (isRetryableStatus(res.status) && attempt < maxAttempts) {
-      await sleep(500 * attempt);
+      await sleep(retryDelayMs(res, attempt));
       continue;
     }
     throw new Error(`Retell API ${path} failed (${res.status}): ${body.slice(0, 500)}`);
@@ -161,6 +169,8 @@ export interface RetellRawCall {
   // Present in the live API response for calls that invoked tools; used to
   // derive the UI category and transfer detection, same as the Python export.
   tool_calls?: RetellToolCall[] | null;
+  // get-call's documented home for tool invocations (role "tool_call_invocation").
+  transcript_with_tool_calls?: { role: string; name?: string | null }[] | null;
 }
 
 interface ListCallsResponse {
@@ -169,16 +179,26 @@ interface ListCallsResponse {
   pagination_key?: string;
 }
 
-async function fetchAllCalls(agentId?: string): Promise<RetellRawCall[]> {
+/** Longest window one request may cover (a max-length range plus its comparison period); bounds Retell usage. */
+export const MAX_WINDOW_DAYS = 800;
+
+export interface CallWindow {
+  /** Epoch ms, inclusive. */
+  from: number;
+  /** Epoch ms, inclusive. */
+  to: number;
+}
+
+async function fetchCallsInWindow(window: CallWindow, agentId?: string): Promise<RetellRawCall[]> {
   const calls: RetellRawCall[] = [];
   let paginationKey: string | undefined;
-  const pageSize = 1000;
-  const filterCriteria: Record<string, unknown> = {};
+  const filterCriteria: Record<string, unknown> = {
+    start_timestamp: { type: 'range', op: 'bt', value: [window.from, window.to] },
+  };
   if (agentId) filterCriteria.agent = [{ agent_id: agentId }];
 
   for (;;) {
-    const body: Record<string, unknown> = { limit: pageSize, sort_order: 'descending' };
-    if (Object.keys(filterCriteria).length) body.filter_criteria = filterCriteria;
+    const body: Record<string, unknown> = { limit: 1000, sort_order: 'descending', filter_criteria: filterCriteria };
     if (paginationKey) body.pagination_key = paginationKey;
 
     const resp = await retellFetch<ListCallsResponse>('/v3/list-calls', {
@@ -192,8 +212,39 @@ async function fetchAllCalls(agentId?: string): Promise<RetellRawCall[]> {
   return calls;
 }
 
-function fetchFullDetail(callId: string): Promise<RetellRawCall> {
-  return retellFetch<RetellRawCall>(`/v2/get-call/${callId}`, { method: 'GET' });
+// v3/list-calls omits transcripts and tool calls, so each call's full detail
+// comes from get-call. A finished call never changes once its post-call
+// analysis is in, so details are cached per call ID for the life of the
+// server instance - after the first load, a refresh costs one list request
+// plus details for new calls only. (Best-effort: each serverless instance
+// has its own cache.)
+const DETAIL_CACHE_MAX = 5000;
+const detailCache = new Map<string, RetellRawCall>();
+
+function isSettled(call: RetellRawCall): boolean {
+  if (call.call_status === 'ongoing' || call.call_status === 'registered') return false;
+  // Analysis lands a little after the call ends; don't cache a call without it
+  // unless it ended long enough ago that none is coming.
+  const endedLongAgo = call.end_timestamp != null && Date.now() - call.end_timestamp > 15 * 60_000;
+  return Boolean(call.call_analysis) || endedLongAgo;
+}
+
+function rememberDetail(call: RetellRawCall) {
+  if (!isSettled(call)) return;
+  detailCache.delete(call.call_id);
+  detailCache.set(call.call_id, call);
+  if (detailCache.size > DETAIL_CACHE_MAX) {
+    const oldest = detailCache.keys().next().value;
+    if (oldest) detailCache.delete(oldest);
+  }
+}
+
+async function fetchFullDetail(callId: string): Promise<RetellRawCall> {
+  const cached = detailCache.get(callId);
+  if (cached) return cached;
+  const call = await retellFetch<RetellRawCall>(`/v2/get-call/${callId}`, { method: 'GET' });
+  rememberDetail(call);
+  return call;
 }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -214,9 +265,22 @@ async function enrichAllWithFullDetail(calls: RetellRawCall[]): Promise<RetellRa
     try {
       return await fetchFullDetail(c.call_id);
     } catch {
+      // Keep the list-level data (no transcript/tools) rather than failing the whole load.
       return c;
     }
   });
+}
+
+/**
+ * Recording URL for one of this agent's calls, as reported by Retell. The
+ * download route proxies only URLs obtained this way, never one supplied by
+ * the browser.
+ */
+export async function getCallRecordingUrl(callId: string): Promise<string | null> {
+  const call = await fetchFullDetail(callId);
+  const agentId = defaultAgentId();
+  if (agentId && call.agent_id !== agentId) return null;
+  return call.recording_url ?? null;
 }
 
 function deriveCategory(toolNames: string[], toolCategories: Record<string, string>): string {
@@ -282,7 +346,11 @@ function flattenCall(call: RetellRawCall, toolCategories: Record<string, string>
   let durationMs = call.duration_ms ?? null;
   if (durationMs == null && start != null && end != null) durationMs = end - start;
 
-  const toolNames = toolCalls.map((tc) => tc.name || tc.type).filter((n): n is string => Boolean(n));
+  const toolNames = toolCalls.length
+    ? toolCalls.map((tc) => tc.name || tc.type).filter((n): n is string => Boolean(n))
+    : (call.transcript_with_tool_calls || [])
+        .filter((e) => e.role === 'tool_call_invocation' && e.name)
+        .map((e) => e.name as string);
   const hadTransfer = call.disconnection_reason === 'call_transfer' || toolNames.includes('transfer_call');
 
   return {
@@ -455,13 +523,13 @@ export interface CallsDashboardData {
   calls: FlatCallRow[];
 }
 
-export async function getCallsDashboard(): Promise<{
+export async function getCallsDashboard(window: CallWindow): Promise<{
   data: CallsDashboardData;
   costRows: CostRow[];
   raw: RetellRawCall[];
 }> {
   const agentId = defaultAgentId();
-  const rawCalls = await fetchAllCalls(agentId);
+  const rawCalls = await fetchCallsInWindow(window, agentId);
   const detailed = await enrichAllWithFullDetail(rawCalls);
   return buildCallsDashboard(detailed, agentId);
 }
@@ -564,18 +632,88 @@ export async function getCurrentTransferTool(): Promise<RetellTransferCallTool |
   return (llm.general_tools || []).find(isTransferCallTool) ?? null;
 }
 
+// The prompt below is also the source of truth that Call Routing reads back
+// (parseTransferPrompt), so the line format must stay parseable:
+//   - <name>[ (<description>)] -> <phone>.[ Trigger keywords: <a>, <b>.]
+const TRANSFER_PROMPT_HEADER =
+  "Pick the phone number for the department that matches what the caller needs, using the caller's stated reason for calling and these department trigger keywords as a guide:";
+const TRANSFER_PROMPT_FOOTER = 'If no department clearly matches, ask the caller to clarify what they need before transferring.';
+const KEYWORDS_MARKER = '. Trigger keywords: ';
+
 function buildTransferPrompt(departments: DepartmentTransferInput[]): string {
   const usable = departments.filter((d) => d.phone && d.phone.trim().length > 0);
   const lines = usable.map((d) => {
-    const kw = d.keywords.length ? ` Trigger keywords: ${d.keywords.join(', ')}.` : '';
+    const kw = d.keywords.length ? `${KEYWORDS_MARKER}${d.keywords.join(', ')}.` : '.';
     const desc = d.description ? ` (${d.description})` : '';
-    return `- ${d.name}${desc} -> ${d.phone}.${kw}`;
+    return `- ${d.name}${desc} -> ${d.phone}${kw}`;
   });
-  return [
-    "Pick the phone number for the department that matches what the caller needs, using the caller's stated reason for calling and these department trigger keywords as a guide:",
-    ...lines,
-    'If no department clearly matches, ask the caller to clarify what they need before transferring.',
-  ].join('\n');
+  return [TRANSFER_PROMPT_HEADER, ...lines, TRANSFER_PROMPT_FOOTER].join('\n');
+}
+
+/** Reverses buildTransferPrompt; returns null if the prompt wasn't written by this console. */
+export function parseTransferPrompt(prompt: string): DepartmentTransferInput[] | null {
+  const lines = prompt.split('\n').map((l) => l.trim());
+  if (lines[0] !== TRANSFER_PROMPT_HEADER) return null;
+
+  const departments: DepartmentTransferInput[] = [];
+  for (const line of lines.slice(1)) {
+    if (!line.startsWith('- ')) continue;
+    const arrow = line.indexOf(' -> ');
+    if (arrow < 0) return null;
+    const head = line.slice(2, arrow);
+    const tail = line.slice(arrow + 4);
+
+    const descMatch = head.match(/^(.*?) \((.*)\)$/);
+    const name = (descMatch ? descMatch[1] : head).trim();
+    const description = descMatch ? descMatch[2].trim() : undefined;
+
+    const kwAt = tail.indexOf(KEYWORDS_MARKER);
+    const phone = (kwAt >= 0 ? tail.slice(0, kwAt) : tail.replace(/\.$/, '')).trim();
+    const keywords =
+      kwAt >= 0
+        ? tail
+            .slice(kwAt + KEYWORDS_MARKER.length)
+            .replace(/\.$/, '')
+            .split(', ')
+            .map((k) => k.trim())
+            .filter(Boolean)
+        : [];
+    if (!name || !phone) return null;
+    departments.push({ name, description, phone, keywords });
+  }
+  return departments;
+}
+
+export type LiveRoutingStatus =
+  /** The agent's transfer_call tool was written by this console and parsed cleanly. */
+  | 'managed'
+  /** A transfer_call tool exists but was set up elsewhere (e.g. the Retell dashboard). */
+  | 'unmanaged'
+  /** The agent has no transfer_call tool yet. */
+  | 'missing';
+
+export interface LiveRouting {
+  status: LiveRoutingStatus;
+  departments: DepartmentTransferInput[];
+  /** Human-readable description of an unmanaged destination, for the warning banner. */
+  summary: string | null;
+}
+
+export async function getLiveRouting(): Promise<LiveRouting> {
+  const tool = await getCurrentTransferTool();
+  if (!tool) return { status: 'missing', departments: [], summary: null };
+
+  const dest = tool.transfer_destination;
+  const parsed = dest?.type === 'inferred' && dest.prompt ? parseTransferPrompt(dest.prompt) : null;
+  if (parsed) return { status: 'managed', departments: parsed, summary: null };
+
+  const summary =
+    dest?.type === 'predefined'
+      ? `Transfers every call to ${dest.number ?? 'a fixed number'}${dest.extension ? ` ext. ${dest.extension}` : ''}.`
+      : dest?.prompt
+        ? `Uses a custom routing prompt: "${dest.prompt.slice(0, 160)}${dest.prompt.length > 160 ? '…' : ''}"`
+        : 'Uses a transfer setup this console can\'t read.';
+  return { status: 'unmanaged', departments: [], summary };
 }
 
 export async function syncDepartmentTransfers(

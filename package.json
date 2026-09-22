@@ -8,9 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "create-account": "node scripts/create-account.mjs",
-    "supabase:start": "npx supabase start",
-    "supabase:stop": "npx supabase stop"
+    "create-account": "node scripts/create-account.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

@@ -7,7 +7,7 @@
 import { cookies } from 'next/headers';
 import { getActiveClient } from '@/clients';
 import type { SessionPayload } from './auth';
-import type { KnowledgeBaseSourceInfo, RetellRawCall } from './retell';
+import type { CallWindow, DepartmentTransferInput, KnowledgeBaseSourceInfo, LiveRouting, RetellRawCall } from './retell';
 
 export const DEMO_CREDENTIALS = { email: 'demo@nuva.dev', password: 'nuva-demo' } as const;
 const DEMO_COOKIE = 'nuva_demo_session';
@@ -153,8 +153,15 @@ const SCRIPTS: Record<string, { summary: string; turns: [string, string][] }[]> 
 
 let cachedCalls: { day: string; calls: RetellRawCall[] } | null = null;
 
+/** Sample calls whose start falls in the window (optional). */
+export function getDemoCalls(window?: CallWindow): RetellRawCall[] {
+  const all = allDemoCalls();
+  if (!window) return all;
+  return all.filter((c) => c.start_timestamp != null && c.start_timestamp >= window.from && c.start_timestamp <= window.to);
+}
+
 /** ~45 days of plausible calls, regenerated once per day so "today" always has data. */
-export function getDemoCalls(): RetellRawCall[] {
+function allDemoCalls(): RetellRawCall[] {
   const today = new Date().toISOString().slice(0, 10);
   if (cachedCalls?.day === today) return cachedCalls.calls;
 
@@ -298,4 +305,25 @@ export function deleteDemoKb(sourceId: string): void {
   const store = kbStore();
   const i = store.findIndex((s) => s.sourceId === sourceId);
   if (i >= 0) store.splice(i, 1);
+}
+
+// --- Call routing (in-memory, survives dev hot reloads) ------------------------
+
+const routingStore = globalThis as unknown as { __nuvaDemoRouting?: LiveRouting };
+
+/** Starts "managed" with the client's configured departments, as if they'd been synced before. */
+export function getDemoRouting(): LiveRouting {
+  if (!routingStore.__nuvaDemoRouting) {
+    routingStore.__nuvaDemoRouting = {
+      status: 'managed',
+      summary: null,
+      departments: getActiveClient().departments.map(({ name, description, phone, keywords }) => ({ name, description, phone, keywords })),
+    };
+  }
+  return routingStore.__nuvaDemoRouting;
+}
+
+export function setDemoRouting(departments: DepartmentTransferInput[]): LiveRouting {
+  routingStore.__nuvaDemoRouting = { status: 'managed', summary: null, departments: departments.filter((d) => d.phone.trim()) };
+  return routingStore.__nuvaDemoRouting;
 }

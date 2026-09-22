@@ -9,11 +9,16 @@ import { ErrorState, PageHeader } from './ui';
 import { callCategoriesFor } from '@/clients/categories';
 import { PRODUCT } from '@/config/product';
 import { filterByDirection, filterByRange, filterBySentiment, resolveRange } from '@/lib/callStats';
+import { tzAbbrev } from '@/lib/time';
 import type { CallRow, DateRange, DateSeg } from '@/types';
 
 const PAGE_SIZE = 25;
 
 interface CallLogsProps {
+  /** Admins can download the raw-data Excel workbook (it includes cost aggregates). */
+  canExport: boolean;
+  /** Exact bounds of the selected range, for the Excel export. */
+  exportBounds: { from: number; to: number };
   calls: CallRow[];
   loading: boolean;
   error: string | null;
@@ -67,6 +72,8 @@ function matchesQuery(r: CallRow, q: string): boolean {
 }
 
 export function CallLogs({
+  canExport,
+  exportBounds,
   calls,
   loading,
   error,
@@ -88,17 +95,18 @@ export function CallLogs({
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
 
-  const range = useMemo(() => resolveRange(dateSeg, customRange), [dateSeg, customRange]);
+  const tz = client.timezone;
+  const range = useMemo(() => resolveRange(dateSeg, customRange, tz), [dateSeg, customRange, tz]);
 
   const filtered = useMemo(() => {
-    let rows = filterByRange(calls, range);
+    let rows = filterByRange(calls, range, tz);
     rows = filterByDirection(rows, direction);
     rows = filterBySentiment(rows, sentiment);
     if (category) rows = rows.filter((r) => r.primary_category === category);
     const q = query.trim().toLowerCase();
     if (q) rows = rows.filter((r) => matchesQuery(r, q));
     return [...rows].sort((a, b) => (b.start_time || '').localeCompare(a.start_time || ''));
-  }, [calls, range, direction, sentiment, category, query]);
+  }, [calls, range, tz, direction, sentiment, category, query]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -118,13 +126,23 @@ export function CallLogs({
       <PageHeader
         eyebrow={`${client.name} · Conversations`}
         title="Call Logs"
-        description={`Every conversation ${PRODUCT.name} has had with ${client.audience}. Select a call for the summary, transcript, and recording.`}
+        description={`Every conversation ${PRODUCT.name} has had with ${client.audience}. Select a call for the summary, transcript, and recording. Times in ${tzAbbrev(tz)}.`}
         actions={
           <>
             <button className="btn btn-secondary" onClick={() => downloadCsv(filtered, client.id)} disabled={!filtered.length}>
               <Icon name="download" size={16} />
               Export CSV
             </button>
+            {canExport && (
+              <a
+                className="btn btn-secondary"
+                href={`/api/calls/export?from=${exportBounds.from}&to=${exportBounds.to}`}
+                title="Full raw data for the selected dates, including transcripts and cost summary"
+              >
+                <Icon name="file" size={16} />
+                Export Excel
+              </a>
+            )}
             <button className="btn btn-secondary" onClick={onToggleFullScreen}>
               <Icon name={fullScreen ? 'collapse' : 'expand'} size={16} />
               {fullScreen ? 'Exit full screen' : 'Full screen'}

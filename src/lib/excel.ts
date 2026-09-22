@@ -1,5 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
+// Server-only: builds the raw-data Excel workbook (Summary, Daily_Trend,
+// Calls, Transcripts, Transcript_Turns) in memory for /api/calls/export.
+
 import ExcelJS from 'exceljs';
 import type { CallsDashboardData, FlatCallRow, RetellRawCall } from './retell';
 
@@ -34,7 +35,6 @@ const CALL_COLUMNS: (keyof FlatCallRow)[] = [
   'recording_multi_channel_url',
 ];
 
-export const EXPORT_PATH = path.join(process.cwd(), 'exports', 'retell_calls_latest.xlsx');
 
 function writeTable(ws: ExcelJS.Worksheet, headers: string[], rows: Record<string, unknown>[]) {
   ws.addRow(headers);
@@ -45,7 +45,7 @@ function writeTable(ws: ExcelJS.Worksheet, headers: string[], rows: Record<strin
   ws.columns = headers.map((h) => ({ width: Math.max(12, Math.min(45, h.length + 4)) }));
 }
 
-export async function writeExcelExport(dashboard: CallsDashboardData, raw: RetellRawCall[]): Promise<string> {
+export async function buildExcelExport(dashboard: CallsDashboardData, raw: RetellRawCall[]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const { summary, daily_trend: dailyTrend, calls } = dashboard;
 
@@ -118,7 +118,5 @@ export async function writeExcelExport(dashboard: CallsDashboardData, raw: Retel
   writeTable(turnsWs, ['call_id', 'turn_index', 'role', 'content', 'start_sec', 'end_sec'], turnRows);
   turnsWs.getColumn(4).width = 80;
 
-  fs.mkdirSync(path.dirname(EXPORT_PATH), { recursive: true });
-  await wb.xlsx.writeFile(EXPORT_PATH);
-  return EXPORT_PATH;
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }

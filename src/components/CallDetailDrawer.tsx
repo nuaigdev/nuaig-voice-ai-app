@@ -8,6 +8,7 @@ import { toneVar } from './ui';
 import { callCategoriesFor } from '@/clients/categories';
 import { PRODUCT } from '@/config/product';
 import { formatClock, formatMs, humanize, outcomeOf } from '@/lib/callStats';
+import { formatInTz } from '@/lib/time';
 import type { CallRow } from '@/types';
 
 interface Turn {
@@ -144,8 +145,8 @@ function CallDetail({ entry }: { entry: CallRow }) {
                   </h5>
                   <a
                     className="btn btn-ghost btn-sm"
-                    href={`/api/download-recording?url=${encodeURIComponent(entry.recording_url)}`}
-                    download={`${entry.call_id}.wav`}
+                    href={`/api/download-recording?call_id=${encodeURIComponent(entry.call_id)}`}
+                    download
                   >
                     <Icon name="download" size={15} />
                     Download
@@ -339,12 +340,13 @@ export function CallDetailDrawer({ entry, position, onStep, onClose }: CallDetai
                   <p>
                     {outbound ? 'Outbound call' : 'Inbound call'}
                     {entry.start_time &&
-                      ` · ${new Date(entry.start_time).toLocaleString('en-US', {
+                      ` · ${formatInTz(entry.start_time, client.timezone, {
                         weekday: 'short',
                         month: 'short',
                         day: 'numeric',
                         hour: 'numeric',
                         minute: '2-digit',
+                        timeZoneName: 'short',
                       })}`}
                   </p>
                 </div>

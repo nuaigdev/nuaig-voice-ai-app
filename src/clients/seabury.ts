@@ -18,6 +18,7 @@ export const seabury: ClientConfig = {
   },
   loginEmailHint: 'you@seaburylife.org',
   audience: 'residents',
+  timezone: 'America/New_York',
 
   integrations: {
     retell: {

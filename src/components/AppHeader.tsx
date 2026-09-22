@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ClientLogo, NuvaMark } from './brand';
 import { Icon, type IconName } from './icons';
+import { useClient } from './providers/ClientConfigProvider';
 import type { SessionPayload } from '@/lib/auth';
+import { formatInTz } from '@/lib/time';
 import type { Theme, ViewKey } from '@/types';
 
 const NAV_ITEMS: { key: ViewKey; label: string; icon: IconName }[] = [
@@ -20,9 +22,9 @@ function initialsOf(email: string): string {
   return letters.toUpperCase();
 }
 
-function formatSyncedAt(iso: string | null): string {
+function formatSyncedAt(iso: string | null, tz: string): string {
   if (!iso) return 'Not synced yet';
-  return `Synced ${new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  return `Synced ${formatInTz(iso, tz, { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}`;
 }
 
 interface AppHeaderProps {
@@ -65,6 +67,7 @@ export function AppHeader({
     };
   }, [menuOpen]);
 
+  const { timezone } = useClient();
   const roleLabel = session.role === 'admin' ? 'Administrator' : 'Viewer';
 
   return (
@@ -98,7 +101,7 @@ export function AppHeader({
             title="Pull the latest calls from the voice agent"
           >
             <span className="sync-dot" aria-hidden="true" />
-            <span className="sync-label">{refreshing ? 'Syncing…' : formatSyncedAt(syncedAt)}</span>
+            <span className="sync-label">{refreshing ? 'Syncing…' : formatSyncedAt(syncedAt, timezone)}</span>
             <Icon name="refresh" size={15} className="sync-icon" />
           </button>
 

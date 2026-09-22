@@ -20,9 +20,6 @@
 # production
 /build
 
-# generated raw-data export (regenerated on every /api/calls fetch)
-/exports
-
 # misc
 .DS_Store
 *.pem
@@ -39,10 +36,6 @@ yarn-error.log*
 
 # vercel
 .vercel
-
-# supabase CLI local state (not project config - config.toml is still tracked)
-supabase/.branches
-supabase/.temp
 
 # typescript
 *.tsbuildinfo

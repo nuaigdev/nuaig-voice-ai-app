@@ -1,47 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
+import { isDemoMode } from '@/lib/demo';
+import { getCallRecordingUrl } from '@/lib/retell';
 
 export const runtime = 'nodejs';
 
-// Retell serves call recordings from CloudFront URLs it hands back in the call
-// object. Proxying the download through our own origin (with a Content-Disposition
-// header) makes the browser save the file instead of just opening/streaming it,
-// which a plain cross-origin <a download> link can't guarantee.
-function isAllowedRecordingUrl(url: URL): boolean {
-  return url.protocol === 'https:' && url.hostname.endsWith('.cloudfront.net');
-}
-
+// Streams a call's recording through our origin with Content-Disposition, so
+// the browser saves the file (a cross-origin <a download> can't guarantee
+// that). The browser only names the call; the audio URL is whatever Retell
+// reports for that call on this client's agent, so the route can't be used to
+// fetch arbitrary URLs.
 export async function GET(request: NextRequest) {
   const session = await requireSession();
   if (session instanceof NextResponse) return session;
 
-  const target = request.nextUrl.searchParams.get('url');
-  if (!target) {
-    return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
+  const callId = request.nextUrl.searchParams.get('call_id');
+  if (!callId || !/^[\w-]{1,128}$/.test(callId)) {
+    return NextResponse.json({ error: 'Missing or invalid call_id' }, { status: 400 });
+  }
+  if (isDemoMode()) {
+    return NextResponse.json({ error: 'Demo calls have no recordings' }, { status: 404 });
   }
 
-  let parsed: URL;
+  let recordingUrl: string | null;
   try {
-    parsed = new URL(target);
-  } catch {
-    return NextResponse.json({ error: 'Invalid url parameter' }, { status: 400 });
+    recordingUrl = await getCallRecordingUrl(callId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not look up the call';
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+  if (!recordingUrl || !recordingUrl.startsWith('https://')) {
+    return NextResponse.json({ error: 'No recording is available for this call' }, { status: 404 });
   }
 
-  if (!isAllowedRecordingUrl(parsed)) {
-    return NextResponse.json({ error: 'URL is not an allowed recording host' }, { status: 400 });
-  }
-
-  const upstream = await fetch(parsed.toString());
+  const upstream = await fetch(recordingUrl, { cache: 'no-store' });
   if (!upstream.ok || !upstream.body) {
-    return NextResponse.json({ error: `Upstream recording fetch failed (${upstream.status})` }, { status: 502 });
+    return NextResponse.json({ error: `Recording fetch failed (${upstream.status})` }, { status: 502 });
   }
 
-  const filename = parsed.pathname.split('/').pop() || 'recording.wav';
+  const ext = new URL(recordingUrl).pathname.split('.').pop()?.toLowerCase();
+  const filename = `${callId}.${ext && /^[a-z0-9]{2,4}$/.test(ext) ? ext : 'wav'}`;
+  const length = upstream.headers.get('content-length');
   return new NextResponse(upstream.body, {
     headers: {
       'Content-Type': upstream.headers.get('content-type') || 'audio/wav',
       'Content-Disposition': `attachment; filename="${filename}"`,
-      ...(upstream.headers.get('content-length') ? { 'Content-Length': upstream.headers.get('content-length')! } : {}),
+      'Cache-Control': 'private, no-store',
+      ...(length ? { 'Content-Length': length } : {}),
     },
   });
 }

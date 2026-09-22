@@ -8,10 +8,9 @@ Each deployment is white-labeled for a single client. The first client is **Seab
 
 ```bash
 npm install
-cp .env.example .env.local                 # fill in the Retell + Supabase values
-npm run supabase:start                     # local Supabase in Docker (needed for sign-in)
-npm run create-account -- "you@x.com" "a-password" admin   # role: admin | user
-npm run dev                                # http://localhost:3000
+cp .env.example .env.local                 # fill in CLIENT_ID and the Retell values
+npm run dev:demo                           # sample data + demo login, no external services
+npm run dev                                # http://localhost:3000, against the live Retell agent
 ```
 
 | Command | What it does |
@@ -20,17 +19,21 @@ npm run dev                                # http://localhost:3000
 | `npm run dev:demo` | Dev server with sample data and a demo login (`demo@nuva.dev` / `nuva-demo`); no Supabase or Retell needed |
 | `npm run build` | Production build (also type-checks) |
 | `npm run lint` | ESLint |
-| `npm run create-account` | Create or update a console login (there's no signup UI) |
+| `npm run create-account` | Create or update a console login (interim Supabase sign-in; see below) |
 
 ### Demo mode
 
 `npm run dev:demo` sets `NUVA_DEMO=1`. With it set, the console serves generated sample calls, an in-memory knowledge base, and a no-op routing sync, so you can click through every page without Supabase or Retell. It only takes effect under `next dev`: production builds ignore the flag.
 
+### Sign-in (not finalized)
+
+The login approach for production hasn't been chosen yet. Until then, `src/lib/auth.ts` still uses Supabase Auth: point the `NEXT_PUBLIC_SUPABASE_*` values in `.env.local` at a Supabase project and create accounts with `npm run create-account`. The local `supabase/` project folder has been removed. Demo mode needs none of this.
+
 ## Product vs. client
 
 - **Product (same for every client):** NuVA/NuAIg branding lives in `src/config/product.ts` and `public/brand/`.
 - **Client (one per community):** each client has a config in `src/clients/<id>.ts` and assets in `public/clients/<id>/`. The config holds:
-  - logo, favicon, and contact details
+  - logo, favicon, contact details and time zone (all days and times display in it)
   - the Retell tool → call category mapping
   - knowledge-base sections
   - the starting list of transfer departments

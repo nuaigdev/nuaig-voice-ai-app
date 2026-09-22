@@ -1761,6 +1761,10 @@ img {
   color: var(--text-2);
 }
 
+.drp-summary.drp-error {
+  color: var(--danger);
+}
+
 .drp-foot-btns {
   display: flex;
   gap: 8px;
@@ -2767,6 +2771,42 @@ tr:hover .row-go {
 }
 
 /* ---------- Call routing ---------- */
+
+.routing-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--text);
+}
+
+.routing-banner > .icon {
+  margin-top: 1px;
+  color: var(--warn);
+}
+
+.routing-banner > div {
+  flex: 1;
+}
+
+.routing-banner b {
+  font-size: 14px;
+}
+
+.routing-banner p {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.pill-live {
+  background: var(--success-soft);
+  color: var(--success);
+}
 
 .dept-grid {
   display: grid;

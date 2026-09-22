@@ -13,9 +13,7 @@ npm run dev              # Next dev server on http://localhost:3000
 npm run dev:demo         # same, with NUVA_DEMO=1: sample data + demo login demo@nuva.dev / nuva-demo, no Supabase/Retell
 npm run build            # production build (also the main type-check)
 npm run lint             # eslint (flat config, eslint-config-next; includes react-hooks/set-state-in-effect)
-npm run supabase:start   # local Supabase in Docker (API :54321, Studio :54323); required for login
-npm run supabase:stop
-npm run create-account -- "you@x.com" "password" admin   # role is admin|user; creates or updates the account
+npm run create-account -- "you@x.com" "password" admin   # interim Supabase sign-in; role is admin|user
 ```
 
 The project has no test framework and no tests. Env vars are listed in `.env.example`; copy it to `.env.local`.
@@ -37,7 +35,7 @@ The product is **NuVA** (always written exactly like that). The vendor is **NuAI
 
 ## Architecture
 
-This is an admin console for a Retell AI voice agent. The app has **no database of its own**. Call, department, and knowledge-base data are read from and written to the Retell REST API on every request. Supabase is used only for authentication.
+This is an admin console for a Retell AI voice agent. The app has **no database of its own**. Call, department, and knowledge-base data are read from and written to the Retell REST API. Sign-in is not finalized: `src/lib/auth.ts` is an interim Supabase Auth implementation (the local `supabase/` folder was removed), so keep auth changes behind `requireSession`/`requireAdmin`.
 
 **Single-page client shell.** `src/app/page.tsx` renders only `ConsoleApp`, which contains:
 - session restore (`/api/auth/me`) and the login screen
@@ -54,8 +52,11 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 
 **`src/lib/retell.ts`** is server-only:
 - `retellFetch` applies a timeout and retries on 502/503/504. Pass `{ retry: false }` for calls that aren't idempotent, such as KB uploads.
-- `getCallsDashboard` lists all calls for `AGENT_ID`, fetches full detail for each (8 at a time), flattens them into `FlatCallRow`, and builds the summaries. `cost_usd` is removed by `/api/calls` before reaching the client (`CallRow = Omit<FlatCallRow, 'cost_usd'>`).
-- The department list is written to the agent LLM's single `transfer_call` tool as one `inferred` destination with a generated prompt (`syncDepartmentTransfers`). Call Routing starts from the client config's `departments` rather than reading the current setup back from Retell.
+- `getCallsDashboard(window)` lists only calls whose `start_timestamp` is in the window (`/v3/list-calls` range filter, max `MAX_WINDOW_DAYS`), then fetches each call's detail (`/v2/get-call`, 8 at a time) because the list omits transcripts and tool calls. Details of settled calls are cached in memory per call ID, so refreshes only fetch new calls. It then flattens them into `FlatCallRow` and builds the summaries. Tool names come from `tool_calls` or, failing that, `transcript_with_tool_calls`.
+- `/api/calls?from=&to=` (epoch ms, parsed by `lib/callWindow.ts`) removes `cost_usd` before responding (`CallRow = Omit<FlatCallRow, 'cost_usd'>`). `/api/calls/export` (admin-only, because its Summary sheet has costs) builds the Excel workbook in memory (`lib/excel.ts`). Nothing is written to disk.
+- `/api/download-recording?call_id=` looks the call up and streams the recording URL Retell reports for it, and only for this client's `AGENT_ID`. It never fetches a URL supplied by the browser.
+- The department list is written to the agent LLM's single `transfer_call` tool as one `inferred` destination with a generated prompt (`syncDepartmentTransfers`). `getLiveRouting` parses that prompt back (`parseTransferPrompt`), so the line format in `buildTransferPrompt` must stay parseable. A tool set up elsewhere comes back as `unmanaged`, and Call Routing requires an explicit opt-in before overwriting it.
+- `retellFetch` also retries 429s, honoring `Retry-After`.
 - After a KB upload, the code polls `get-knowledge-base`, because Retell's add response is stale.
 
 **Demo mode** (`src/lib/demo.ts`). `isDemoMode()` requires both `NODE_ENV === 'development'` and `NUVA_DEMO=1`, so it can never turn on in a production build. Every route handler checks it before calling Supabase or Retell:
@@ -66,7 +67,7 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 
 When you add a route that touches Supabase or Retell, add a demo branch as well.
 
-**Side effect.** Every `/api/calls` request also writes `exports/retell_calls_latest.xlsx` (`src/lib/excel.ts`, gitignored).
+**Time zones** (`src/lib/time.ts`). Days, charts and timestamps use the client's `timezone`, not the viewer's browser. `DateRange` values are calendar dates, compared with calls via `YYYY-MM-DD` day keys (`dayKeyInTz`). The client fetches `dataWindow(range)` (the range, its comparison period, and the chart's minimum week) padded by `fetchBounds`, and exports use `exactBounds`. Always pass `tz` to the `callStats` range helpers.
 
 ## UI conventions
 

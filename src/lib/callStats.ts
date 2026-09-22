@@ -1,13 +1,15 @@
 import type { CallRow, DateRange, DateSeg } from '@/types';
+import { addDays, dateKey, dayKeyInTz, daysBetween, todayInTz } from './time';
 
-export function filterByRange(rows: CallRow[], range: DateRange | null): CallRow[] {
+/** Calls whose start falls on a calendar day inside `range`, judged in the client's time zone. */
+export function filterByRange(rows: CallRow[], range: DateRange | null, tz: string): CallRow[] {
   if (!range) return rows;
-  const start = new Date(range.start).setHours(0, 0, 0, 0);
-  const end = new Date(range.end).setHours(23, 59, 59, 999);
+  const startKey = dateKey(range.start);
+  const endKey = dateKey(range.end);
   return rows.filter((r) => {
     if (!r.start_time) return false;
-    const t = new Date(r.start_time).getTime();
-    return t >= start && t <= end;
+    const key = dayKeyInTz(r.start_time, tz);
+    return key >= startKey && key <= endKey;
   });
 }
 
@@ -126,59 +128,63 @@ export function humanize(s: string): string {
     .join(' ');
 }
 
-export function segmentToRange(seg: 'today' | '7' | '30'): DateRange {
-  const end = new Date();
-  const start = new Date();
-  if (seg === '7') start.setDate(end.getDate() - 6);
-  else if (seg === '30') start.setDate(end.getDate() - 29);
-  return { start, end };
+/** Calendar range for a quick segment, anchored on "today" in the client's time zone. */
+export function segmentToRange(seg: 'today' | '7' | '30', tz: string): DateRange {
+  const end = todayInTz(tz);
+  if (seg === '7') return { start: addDays(end, -6), end };
+  if (seg === '30') return { start: addDays(end, -29), end };
+  return { start: end, end };
 }
 
+/** The same number of days immediately before `range`. */
 export function previousPeriod(range: DateRange): DateRange {
-  const start = new Date(range.start).setHours(0, 0, 0, 0);
-  const end = new Date(range.end).setHours(23, 59, 59, 999);
-  const spanMs = end - start;
-  const prevEnd = new Date(start - 1);
-  const prevStart = new Date(prevEnd.getTime() - spanMs);
-  return { start: prevStart, end: prevEnd };
+  const span = daysBetween(range.start, range.end) + 1;
+  return { start: addDays(range.start, -span), end: addDays(range.start, -1) };
 }
 
-export function resolveRange(seg: DateSeg, customRange: DateRange | null): DateRange {
-  if (seg === 'custom') return customRange ?? segmentToRange('30');
-  return segmentToRange(seg);
+export function resolveRange(seg: DateSeg, customRange: DateRange | null, tz: string): DateRange {
+  if (seg === 'custom') return customRange ?? segmentToRange('30', tz);
+  return segmentToRange(seg, tz);
 }
 
-function localDayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** Days before the range end that the trend chart always shows, even for "Today". */
+const MIN_SERIES_DAYS = 7;
+/** Longest trend the chart draws; older days in very long ranges are dropped. */
+const MAX_SERIES_DAYS = 120;
+
+function seriesStart(range: DateRange): Date {
+  const minStart = addDays(range.end, -(MIN_SERIES_DAYS - 1));
+  const maxStart = addDays(range.end, -(MAX_SERIES_DAYS - 1));
+  if (range.start > minStart) return minStart;
+  if (range.start < maxStart) return maxStart;
+  return range.start;
 }
 
 /**
- * Calls per local day across the range, zero-filled so quiet days show as
- * gaps in the chart rather than being skipped. Short ranges are widened to
- * the trailing week so "Today" still draws a trend; very long ranges are
- * capped to their most recent 120 days.
+ * The calendar window the UI needs data for: the selected range, the
+ * previous period (for deltas), and the trend chart's minimum week.
  */
-export function dailySeries(rows: CallRow[], range: DateRange): DailyVolumePoint[] {
-  const end = new Date(range.end);
-  end.setHours(0, 0, 0, 0);
-  const start = new Date(range.start);
-  start.setHours(0, 0, 0, 0);
-  const minStart = new Date(end);
-  minStart.setDate(end.getDate() - 6);
-  const maxStart = new Date(end);
-  maxStart.setDate(end.getDate() - 119);
-  const from = start > minStart ? minStart : start < maxStart ? maxStart : start;
+export function dataWindow(range: DateRange): DateRange {
+  const prev = previousPeriod(range);
+  const series = seriesStart(range);
+  return { start: prev.start < series ? prev.start : series, end: range.end };
+}
 
+/**
+ * Calls per day (in the client's time zone) across the range, zero-filled so
+ * quiet days show as gaps in the chart rather than being skipped.
+ */
+export function dailySeries(rows: CallRow[], range: DateRange, tz: string): DailyVolumePoint[] {
   const counts = new Map<string, number>();
   for (const r of rows) {
     if (!r.start_time) continue;
-    const key = localDayKey(new Date(r.start_time));
+    const key = dayKeyInTz(r.start_time, tz);
     counts.set(key, (counts.get(key) || 0) + 1);
   }
 
   const points: DailyVolumePoint[] = [];
-  for (const d = new Date(from); d <= end; d.setDate(d.getDate() + 1)) {
-    const key = localDayKey(d);
+  for (let d = seriesStart(range); d <= range.end; d = addDays(d, 1)) {
+    const key = dateKey(d);
     points.push({ date: key, count: counts.get(key) || 0 });
   }
   return points;
@@ -187,17 +193,6 @@ export function dailySeries(rows: CallRow[], range: DateRange): DailyVolumePoint
 export function formatClock(sec: number | null): string {
   if (sec == null) return '—';
   return formatDuration(sec);
-}
-
-export function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
 }
 
 export function formatMs(ms: number | null): string {

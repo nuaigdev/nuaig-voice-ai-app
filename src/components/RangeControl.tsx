@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { DateRangePicker } from './DateRangePicker';
 import { Icon } from './icons';
+import { useClient } from './providers/ClientConfigProvider';
+import { todayInTz } from '@/lib/time';
 import type { DateRange, DateSeg } from '@/types';
 
 const SEGMENTS: { key: Exclude<DateSeg, 'custom'>; label: string }[] = [
@@ -21,6 +23,7 @@ interface RangeControlProps {
 /** Today / 7 / 30 / custom segmented control. The selection is shared by Overview and Call Logs. */
 export function RangeControl({ dateSeg, onDateSegChange, customLabel, onApplyCustomRange }: RangeControlProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { timezone } = useClient();
 
   return (
     <div className="range-control">
@@ -48,6 +51,7 @@ export function RangeControl({ dateSeg, onDateSegChange, customLabel, onApplyCus
       </div>
       <DateRangePicker
         open={pickerOpen}
+        today={todayInTz(timezone)}
         onApply={(range) => {
           onApplyCustomRange(range);
           setPickerOpen(false);

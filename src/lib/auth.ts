@@ -1,8 +1,8 @@
-// Server-only: session/role checks backed by Supabase Auth (self-hosted via
-// `supabase start` - see supabase/config.toml). Supabase handles
-// identity and sessions; role is our own claim, stored in each account's
-// app_metadata (set via the Admin API - see scripts/create-account.mjs) and
-// surfaced here from supabase.auth.getUser().
+// Server-only: session/role checks. Interim implementation on Supabase Auth
+// (the production login approach is not finalized): Supabase handles identity
+// and sessions; role is our own claim, stored in each account's app_metadata
+// (set via the Admin API - see scripts/create-account.mjs) and surfaced here
+// from supabase.auth.getUser(). Demo mode (lib/demo) bypasses Supabase.
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from './supabase/server';

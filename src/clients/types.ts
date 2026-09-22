@@ -59,6 +59,11 @@ export interface ClientConfig {
   loginEmailHint: string;
   /** How residents are referred to in copy ("residents", "members", ...). */
   audience: string;
+  /**
+   * IANA time zone of the community (e.g. "America/New_York"). Days, charts and
+   * timestamps are shown in this zone for every viewer.
+   */
+  timezone: string;
 
   /**
    * Client-specific wiring into this community's Retell agent. Tool names
