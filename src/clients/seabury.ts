@@ -64,51 +64,7 @@ export const seabury: ClientConfig = {
     ],
   },
 
-  departments: [
-    {
-      id: 'nursing',
-      name: 'Nursing Staff',
-      description: 'Medical, wellness & health-related calls',
-      phone: '+1 (555) 019-2244',
-      keywords: ['fall', 'chest pain', "can't breathe", 'medication', 'dizzy'],
-      icon: 'pulse',
-      tone: 'rose',
-    },
-    {
-      id: 'admin',
-      name: 'Admin Staff',
-      description: 'Billing, leasing & account questions',
-      phone: '+1 (555) 019-2255',
-      keywords: ['billing', 'lease', 'move out', 'complaint', 'paperwork'],
-      icon: 'briefcase',
-      tone: 'amber',
-    },
-    {
-      id: 'maintenance',
-      name: 'Maintenance',
-      description: 'Repairs & facility issues',
-      phone: '+1 (555) 019-2266',
-      keywords: ['leaking', 'broken', 'air conditioner', 'door lock', 'wifi'],
-      icon: 'wrench',
-      tone: 'indigo',
-    },
-    {
-      id: 'dining',
-      name: 'Dining Services',
-      description: 'Menus, meal delivery & dietary needs',
-      phone: '+1 (555) 019-2277',
-      keywords: ['food allergy', 'special diet', 'meal delivery', 'kitchen'],
-      icon: 'utensils',
-      tone: 'emerald',
-    },
-    {
-      id: 'frontdesk',
-      name: 'Front Desk / Security',
-      description: 'Visitors, packages & access issues',
-      phone: '+1 (555) 019-2288',
-      keywords: ['visitor', 'package', 'locked out', 'suspicious'],
-      icon: 'shield',
-      tone: 'brand',
-    },
-  ],
+  // Starting list for Call Routing. Left empty until the community supplies its real transfer numbers:
+  // saving this list rewrites the live agent's transfer_call tool.
+  departments: [],
 };

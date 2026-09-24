@@ -8,26 +8,25 @@ Each deployment is white-labeled for a single client. The first client is **Seab
 
 ```bash
 npm install
-cp .env.example .env.local                 # fill in CLIENT_ID and the Retell values
-npm run dev:demo                           # sample data + demo login, no external services
+cp .env.example .env.local                 # fill in CLIENT_ID, the Retell values and AUTH_SECRET
+npm run dev:demo                           # generated sample calls, no Retell needed
 npm run dev                                # http://localhost:3000, against the live Retell agent
 ```
 
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Dev server |
-| `npm run dev:demo` | Dev server with sample data and a demo login (`demo@nuva.dev` / `nuva-demo`); no Supabase or Retell needed |
+| `npm run dev:demo` | Dev server with generated sample calls; no Retell needed |
 | `npm run build` | Production build (also type-checks) |
 | `npm run lint` | ESLint |
-| `npm run create-account` | Create or update a console login (interim Supabase sign-in; see below) |
 
 ### Demo mode
 
-`npm run dev:demo` sets `NUVA_DEMO=1`. With it set, the console serves generated sample calls, an in-memory knowledge base, and a no-op routing sync, so you can click through every page without Supabase or Retell. It only takes effect under `next dev`: production builds ignore the flag.
+`npm run dev:demo` sets `NUVA_DEMO=1`. With it set, the console serves generated sample calls, an in-memory knowledge base, and a no-op routing sync, so you can click through every page without Retell. It only takes effect under `next dev`: production builds ignore the flag.
 
 ### Sign-in (not finalized)
 
-The login approach for production hasn't been chosen yet. Until then, `src/lib/auth.ts` still uses Supabase Auth: point the `NEXT_PUBLIC_SUPABASE_*` values in `.env.local` at a Supabase project and create accounts with `npm run create-account`. The local `supabase/` project folder has been removed. Demo mode needs none of this.
+The login approach for production hasn't been chosen yet. Until then, `src/lib/auth.ts` is a single shared admin account: `demo@nuva.dev` / `nuva-demo`, or `CONSOLE_LOGIN_EMAIL` / `CONSOLE_LOGIN_PASSWORD` if set. The session cookie is signed with `AUTH_SECRET`, which production builds require.
 
 ## Product vs. client
 

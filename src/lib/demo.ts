@@ -1,38 +1,18 @@
-// Server-only: local demo mode, for clicking through the console without
-// Supabase or Retell. Enabled by NUVA_DEMO=1 and ONLY under `next dev` -
-// Next sets NODE_ENV to "production" for builds, so a deployed app can never
-// turn this on. Route handlers check isDemoMode() before touching Supabase or
-// Retell and serve the fixtures below instead.
+// Server-only: optional fixture mode (`npm run dev:demo`), for clicking through
+// the console with generated sample data instead of a live Retell agent.
+// Enabled by NUVA_DEMO=1 and ONLY under `next dev` - Next sets NODE_ENV to
+// "production" for builds, so a deployed app can never turn this on. Sign-in is
+// the same as always (lib/auth); this only swaps the data source. Route handlers
+// check isDemoMode() before calling Retell and serve the fixtures below instead.
 
-import { cookies } from 'next/headers';
 import { getActiveClient } from '@/clients';
-import type { SessionPayload } from './auth';
+import { DEFAULT_LOGIN } from './auth';
 import type { CallWindow, DepartmentTransferInput, KnowledgeBaseSourceInfo, LiveRouting, RetellRawCall } from './retell';
 
-export const DEMO_CREDENTIALS = { email: 'demo@nuva.dev', password: 'nuva-demo' } as const;
-const DEMO_COOKIE = 'nuva_demo_session';
+export const DEMO_CREDENTIALS = DEFAULT_LOGIN;
 
 export function isDemoMode(): boolean {
   return process.env.NODE_ENV === 'development' && process.env.NUVA_DEMO === '1';
-}
-
-// --- Session ------------------------------------------------------------------
-
-export async function getDemoSession(): Promise<SessionPayload | null> {
-  const store = await cookies();
-  return store.get(DEMO_COOKIE)?.value === '1' ? { email: DEMO_CREDENTIALS.email, role: 'admin' } : null;
-}
-
-export async function demoSignIn(email: string, password: string): Promise<SessionPayload | null> {
-  if (email.trim().toLowerCase() !== DEMO_CREDENTIALS.email || password !== DEMO_CREDENTIALS.password) return null;
-  const store = await cookies();
-  store.set(DEMO_COOKIE, '1', { httpOnly: true, sameSite: 'lax', path: '/' });
-  return { email: DEMO_CREDENTIALS.email, role: 'admin' };
-}
-
-export async function demoSignOut(): Promise<void> {
-  const store = await cookies();
-  store.delete(DEMO_COOKIE);
 }
 
 // --- Sample calls -----------------------------------------------------------

@@ -10,10 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run dev              # Next dev server on http://localhost:3000
-npm run dev:demo         # same, with NUVA_DEMO=1: sample data + demo login demo@nuva.dev / nuva-demo, no Supabase/Retell
+npm run dev:demo         # same, with NUVA_DEMO=1: generated sample calls, no Retell (login is the same)
 npm run build            # production build (also the main type-check)
 npm run lint             # eslint (flat config, eslint-config-next; includes react-hooks/set-state-in-effect)
-npm run create-account -- "you@x.com" "password" admin   # interim Supabase sign-in; role is admin|user
 ```
 
 The project has no test framework and no tests. Env vars are listed in `.env.example`; copy it to `.env.local`.
@@ -35,7 +34,7 @@ The product is **NuVA** (always written exactly like that). The vendor is **NuAI
 
 ## Architecture
 
-This is an admin console for a Retell AI voice agent. The app has **no database of its own**. Call, department, and knowledge-base data are read from and written to the Retell REST API. Sign-in is not finalized: `src/lib/auth.ts` is an interim Supabase Auth implementation (the local `supabase/` folder was removed), so keep auth changes behind `requireSession`/`requireAdmin`.
+This is an admin console for a Retell AI voice agent. The app has **no database of its own**. Call, department, and knowledge-base data are read from and written to the Retell REST API. Sign-in is not finalized: `src/lib/auth.ts` is an interim single shared account, so keep auth changes behind `requireSession`/`requireAdmin`.
 
 **Single-page client shell.** `src/app/page.tsx` renders only `ConsoleApp`, which contains:
 - session restore (`/api/auth/me`) and the login screen
@@ -48,7 +47,7 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 
 **Route handlers (`src/app/api/*`)** all use `runtime = 'nodejs'`. Each starts with `requireSession()` or `requireAdmin()` from `src/lib/auth.ts`, which return a session or a `NextResponse` to return immediately. Reads need a session; mutations (departments POST, knowledge-base POST/DELETE) need the admin role. Retell failures come back as `{ error }` with status 502.
 
-**Auth.** Supabase Auth with `@supabase/ssr` cookies (`src/lib/supabase/server.ts`). The role lives in the user's `app_metadata.role`, which only the Admin API can set (through `create-account`). The client checks `canEdit` only to hide controls; the server enforces the role separately.
+**Auth.** One shared admin account (`CONSOLE_LOGIN_EMAIL` / `CONSOLE_LOGIN_PASSWORD`, defaulting to demo@nuva.dev / nuva-demo) and an HMAC-signed httpOnly session cookie keyed by `AUTH_SECRET` (required in production). The client checks `canEdit` only to hide controls; the server enforces the role separately.
 
 **`src/lib/retell.ts`** is server-only:
 - `retellFetch` applies a timeout and retries on 502/503/504. Pass `{ retry: false }` for calls that aren't idempotent, such as KB uploads.
@@ -59,13 +58,12 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 - `retellFetch` also retries 429s, honoring `Retry-After`.
 - After a KB upload, the code polls `get-knowledge-base`, because Retell's add response is stale.
 
-**Demo mode** (`src/lib/demo.ts`). `isDemoMode()` requires both `NODE_ENV === 'development'` and `NUVA_DEMO=1`, so it can never turn on in a production build. Every route handler checks it before calling Supabase or Retell:
-- auth uses a demo cookie session
+**Demo mode** (`src/lib/demo.ts`). `isDemoMode()` requires both `NODE_ENV === 'development'` and `NUVA_DEMO=1`, so it can never turn on in a production build. Every data route handler checks it before calling Retell (sign-in is unchanged):
 - `/api/calls` runs generated `RetellRawCall` fixtures through `buildCallsDashboard` (the same pipeline as live data)
 - the knowledge base is an in-memory store
 - department sync is a no-op
 
-When you add a route that touches Supabase or Retell, add a demo branch as well.
+When you add a route that touches Retell, add a demo branch as well.
 
 **Time zones** (`src/lib/time.ts`). Days, charts and timestamps use the client's `timezone`, not the viewer's browser. `DateRange` values are calendar dates, compared with calls via `YYYY-MM-DD` day keys (`dayKeyInTz`). The client fetches `dataWindow(range)` (the range, its comparison period, and the chart's minimum week) padded by `fetchBounds`, and exports use `exactBounds`. Always pass `tz` to the `callStats` range helpers.
 

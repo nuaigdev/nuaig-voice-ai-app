@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // `npm run dev:demo`: runs `next dev` with NUVA_DEMO=1, so the console serves
-// sample data and accepts the demo login (see src/lib/demo.ts). No Supabase
-// or Retell needed. Extra args pass through, e.g. `npm run dev:demo -- --port 3100`.
+// generated sample calls (see src/lib/demo.ts). No Retell needed. Extra args pass through, e.g. `npm run dev:demo -- --port 3100`.
 
 import { spawn } from 'node:child_process';
 
