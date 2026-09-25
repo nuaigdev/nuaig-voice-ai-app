@@ -1,6 +1,6 @@
 'use client';
 
-import { ClientLogo, NuaigLogo, NuvaMark } from './brand';
+import { ClientLogo, NuvaMark } from './brand';
 import { Icon } from './icons';
 import { useClient } from './providers/ClientConfigProvider';
 import { Card, PageHeader } from './ui';
@@ -80,16 +80,9 @@ export function Account({ onLogout, session }: AccountProps) {
           </ul>
           <div className="about-product">
             <NuvaMark size="sm" subtitle={PRODUCT.tagline} />
-            <a className="built-by" href={PRODUCT.vendor.url} target="_blank" rel="noreferrer">
-              <span>Built by</span>
-              <NuaigLogo height={20} />
-            </a>
           </div>
           <p className="muted-note">
-            Need help? Contact{' '}
-            <a className="link" href={`mailto:${PRODUCT.vendor.email}`}>
-              {PRODUCT.vendor.email}
-            </a>
+            Need help? Contact your community administrator.
           </p>
         </Card>
       </div>

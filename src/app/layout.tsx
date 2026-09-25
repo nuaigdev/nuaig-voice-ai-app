@@ -28,8 +28,8 @@ const mono = JetBrains_Mono({
 export function generateMetadata(): Metadata {
   const client = getActiveClient();
   return {
-    title: `${PRODUCT.name} · ${client.name}`,
-    description: `${PRODUCT.name} ${PRODUCT.descriptor} for ${client.name}, built by ${PRODUCT.vendor.name}.`,
+    title: `${PRODUCT.name} ${PRODUCT.descriptor}`,
+    description: `${PRODUCT.name} ${PRODUCT.descriptor} for ${client.name}.`,
     icons: client.icon ? { icon: client.icon, apple: client.icon } : undefined,
   };
 }

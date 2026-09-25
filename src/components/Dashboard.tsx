@@ -158,7 +158,7 @@ export function Dashboard({
       <PageHeader
         eyebrow={`${client.name} · Voice agent performance`}
         title="Overview"
-        description={`How ${PRODUCT.name} is serving ${client.name} ${client.audience}, live from the voice agent. Times in ${tzAbbrev(tz)}.`}
+        description={`How the assistant is serving ${client.audience}, live from the voice agent. Times in ${tzAbbrev(tz)}.`}
         actions={
           <RangeControl dateSeg={dateSeg} onDateSegChange={onDateSegChange} customLabel={customLabel} onApplyCustomRange={onApplyCustomRange} />
         }

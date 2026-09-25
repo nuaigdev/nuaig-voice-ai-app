@@ -1,9 +1,8 @@
 'use client';
 
-import { NuaigLogo, NuvaMark } from './brand';
+import { NuvaMark } from './brand';
 import { Icon } from './icons';
 import { useClient } from './providers/ClientConfigProvider';
-import { PRODUCT } from '@/config/product';
 
 export function AppFooter() {
   const client = useClient();
@@ -45,11 +44,7 @@ export function AppFooter() {
         </ul>
 
         <div className="footer-vendor">
-          <a className="built-by" href={PRODUCT.vendor.url} target="_blank" rel="noreferrer" aria-label={`Built by ${PRODUCT.vendor.name}`}>
-            <span>Built by</span>
-            <NuaigLogo height={22} />
-          </a>
-          <span className="footer-copy">© {year} {PRODUCT.vendor.name}</span>
+          <span className="footer-copy">© {year} {client.name}</span>
         </div>
       </div>
     </footer>

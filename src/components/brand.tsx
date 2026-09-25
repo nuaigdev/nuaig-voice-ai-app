@@ -19,22 +19,6 @@ export function ClientLogo({ height = 40, className = '' }: { height?: number; c
   );
 }
 
-/** NuAIg logo. `tone="auto"` follows the theme; "light"/"dark" force a variant for fixed backgrounds. */
-export function NuaigLogo({ height = 20, tone = 'auto' }: { height?: number; tone?: 'auto' | 'light' | 'dark' }) {
-  const { logo, name } = PRODUCT.vendor;
-  const width = Math.round((logo.width / logo.height) * height);
-  if (tone !== 'auto') {
-    const src = tone === 'dark' ? logo.dark : logo.light;
-    return <Image className="nuaig-logo" src={src} alt={name} width={width} height={height} />;
-  }
-  return (
-    <span className="nuaig-logo">
-      <Image className="logo-on-light" src={logo.light} alt={name} width={width} height={height} />
-      <Image className="logo-on-dark" src={logo.dark} alt={name} width={width} height={height} />
-    </span>
-  );
-}
-
 /**
  * The NuVA wordmark: the product name set in its own display face with the
  * signature gradient. `onDark` switches to the bright gradient for fixed dark

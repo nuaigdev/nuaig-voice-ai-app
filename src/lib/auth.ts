@@ -16,7 +16,7 @@ export interface SessionPayload {
   role: Role;
 }
 
-export const DEFAULT_LOGIN = { email: 'demo@nuva.dev', password: 'nuva-demo' } as const;
+export const DEFAULT_LOGIN = { email: 'admin@seaburylife.org', password: 'demo@seabury' } as const;
 
 const SESSION_COOKIE = 'nuva_session';
 const SESSION_MAX_AGE_SEC = 60 * 60 * 8;

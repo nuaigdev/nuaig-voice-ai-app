@@ -44,14 +44,14 @@ export const seabury: ClientConfig = {
         key: 'menu',
         label: "Today's Food Menu",
         uploadTitle: "Today's food menu",
-        uploadDescription: 'PDF, DOCX, or image. NuVA reads it and offers these choices by voice.',
+        uploadDescription: 'PDF, DOCX, or image. The assistant reads it and offers these choices by voice.',
         icon: 'utensils',
       },
       {
         key: 'community',
         label: 'Community Info',
         uploadTitle: 'Community information',
-        uploadDescription: 'Guidelines, hours, schedules: anything residents might ask NuVA about.',
+        uploadDescription: 'Guidelines, hours, schedules: anything residents might ask the assistant about.',
         icon: 'building',
       },
       {

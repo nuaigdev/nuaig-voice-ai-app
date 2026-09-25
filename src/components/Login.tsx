@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { ClientLogo, NuaigLogo, NuvaMark } from './brand';
+import { ClientLogo, NuvaMark } from './brand';
 import { Icon, type IconName } from './icons';
 import { useClient } from './providers/ClientConfigProvider';
 import { InlineError } from './ui';
@@ -71,7 +71,7 @@ export function Login({ onLogin, demoCredentials }: LoginProps) {
             <span>answered with care.</span>
           </h2>
           <p className="lb-lede">
-            {PRODUCT.name} answers {client.name} {client.audience} by voice and hands off to staff when it matters.
+            Your voice assistant answers {client.audience} by phone and hands off to staff when it matters.
           </p>
 
           <div className="lb-convo" aria-hidden="true">
@@ -94,11 +94,11 @@ export function Login({ onLogin, demoCredentials }: LoginProps) {
           </ul>
         </div>
 
-        <a className="lb-foot" href={PRODUCT.vendor.url} target="_blank" rel="noreferrer" aria-label={`Built by ${PRODUCT.vendor.name}`}>
-          <span className="lb-foot-label">Built by</span>
-          <NuaigLogo height={26} tone="dark" />
-          <span className="lb-foot-tag">{PRODUCT.vendor.tagline}</span>
-        </a>
+        <div className="lb-foot">
+          <span className="lb-foot-tag">
+            {client.name} · {client.descriptor}
+          </span>
+        </div>
       </aside>
 
       <main className="login-main">
@@ -107,7 +107,7 @@ export function Login({ onLogin, demoCredentials }: LoginProps) {
           <div className="login-heading">
             <h1>Sign in</h1>
             <p>
-              Welcome to {PRODUCT.name} for {client.name}. Use the account your administrator set up for you.
+              Welcome to the {client.name} voice console. Use the account your administrator set up for you.
             </p>
           </div>
 
@@ -182,7 +182,7 @@ export function Login({ onLogin, demoCredentials }: LoginProps) {
         </form>
 
         <p className="login-legal">
-          © {new Date().getFullYear()} {PRODUCT.vendor.name} · {PRODUCT.name} {PRODUCT.descriptor}
+          © {new Date().getFullYear()} {client.name} · {PRODUCT.name} {PRODUCT.descriptor}
         </p>
       </main>
     </div>

@@ -26,7 +26,7 @@ npm run dev                                # http://localhost:3000, against the 
 
 ### Sign-in (not finalized)
 
-The login approach for production hasn't been chosen yet. Until then, `src/lib/auth.ts` is a single shared admin account: `demo@nuva.dev` / `nuva-demo`, or `CONSOLE_LOGIN_EMAIL` / `CONSOLE_LOGIN_PASSWORD` if set. The session cookie is signed with `AUTH_SECRET`, which production builds require.
+The login approach for production hasn't been chosen yet. Until then, `src/lib/auth.ts` is a single shared admin account: `admin@seaburylife.org` / `demo@seabury`, or `CONSOLE_LOGIN_EMAIL` / `CONSOLE_LOGIN_PASSWORD` if set. The session cookie is signed with `AUTH_SECRET`, which production builds require.
 
 ## Product vs. client
 

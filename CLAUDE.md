@@ -47,7 +47,7 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 
 **Route handlers (`src/app/api/*`)** all use `runtime = 'nodejs'`. Each starts with `requireSession()` or `requireAdmin()` from `src/lib/auth.ts`, which return a session or a `NextResponse` to return immediately. Reads need a session; mutations (departments POST, knowledge-base POST/DELETE) need the admin role. Retell failures come back as `{ error }` with status 502.
 
-**Auth.** One shared admin account (`CONSOLE_LOGIN_EMAIL` / `CONSOLE_LOGIN_PASSWORD`, defaulting to demo@nuva.dev / nuva-demo) and an HMAC-signed httpOnly session cookie keyed by `AUTH_SECRET` (required in production). The client checks `canEdit` only to hide controls; the server enforces the role separately.
+**Auth.** One shared admin account (`CONSOLE_LOGIN_EMAIL` / `CONSOLE_LOGIN_PASSWORD`, defaulting to admin@seaburylife.org / demo@seabury) and an HMAC-signed httpOnly session cookie keyed by `AUTH_SECRET` (required in production). The client checks `canEdit` only to hide controls; the server enforces the role separately.
 
 **`src/lib/retell.ts`** is server-only:
 - `retellFetch` applies a timeout and retries on 502/503/504. Pass `{ retry: false }` for calls that aren't idempotent, such as KB uploads.

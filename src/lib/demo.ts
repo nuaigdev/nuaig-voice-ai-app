@@ -6,6 +6,7 @@
 // check isDemoMode() before calling Retell and serve the fixtures below instead.
 
 import { getActiveClient } from '@/clients';
+import { PRODUCT } from '@/config/product';
 import { DEFAULT_LOGIN } from './auth';
 import type { CallWindow, DepartmentTransferInput, KnowledgeBaseSourceInfo, LiveRouting, RetellRawCall } from './retell';
 
@@ -123,7 +124,7 @@ const SCRIPTS: Record<string, { summary: string; turns: [string, string][] }[]> 
       summary: 'Resident called to check what day it is and thanked the agent.',
       turns: [
         ['User', 'Hello, is anyone there?'],
-        ['Agent', 'Hi, this is NuVA. How can I help you today?'],
+        ['Agent', 'Hi, this is the Seabury assistant. How can I help you today?'],
         ['User', 'Oh, I just wanted to know what day it is.'],
         ['Agent', 'Today is a lovely day. Is there anything else I can help with?'],
       ],
@@ -208,7 +209,7 @@ function allDemoCalls(): RetellRawCall[] {
       calls.push({
         call_id: id,
         agent_id: 'agent_demo',
-        agent_name: `NuVA · ${client.name}`,
+        agent_name: `${PRODUCT.name}`,
         call_type: 'phone_call',
         direction: outbound ? 'outbound' : 'inbound',
         call_status: 'ended',
