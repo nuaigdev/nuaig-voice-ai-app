@@ -1,6 +1,5 @@
 'use client';
 
-import { NuvaMark } from './brand';
 import { Icon } from './icons';
 import { useClient } from './providers/ClientConfigProvider';
 
@@ -14,7 +13,6 @@ export function AppFooter() {
       <div className="footer-accent" aria-hidden="true" />
       <div className="app-footer-inner">
         <div className="footer-product">
-          <NuvaMark size="sm" />
           <span className="footer-for">
             Voice concierge for <b>{client.name}</b>
           </span>

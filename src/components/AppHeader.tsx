@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ClientLogo, NuvaMark } from './brand';
+import { ClientLogo } from './brand';
 import { Icon, type IconName } from './icons';
 import { useClient } from './providers/ClientConfigProvider';
 import type { SessionPayload } from '@/lib/auth';
@@ -74,8 +74,6 @@ export function AppHeader({
     <header className="app-header">
       <div className="app-header-inner">
         <div className="header-brand">
-          <NuvaMark size="sm" />
-          <span className="header-divider" aria-hidden="true" />
           <ClientLogo height={42} />
         </div>
 
