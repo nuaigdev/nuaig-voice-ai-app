@@ -48,13 +48,13 @@ interface UploadPanelProps {
   description: string;
   category: KbCategory;
   remoteDocs: KnowledgeBaseSourceInfo[];
-  otherDocs: KnowledgeBaseSourceInfo[];
   canEdit: boolean;
+  /** Receives this category's full source list after an upload. */
   onUploaded: (sources: KnowledgeBaseSourceInfo[]) => void;
   onDeleted: (sourceId: string) => void;
 }
 
-export function UploadPanel({ title, description, category, remoteDocs, otherDocs, canEdit, onUploaded, onDeleted }: UploadPanelProps) {
+export function UploadPanel({ title, description, category, remoteDocs, canEdit, onUploaded, onDeleted }: UploadPanelProps) {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -82,7 +82,7 @@ export function UploadPanel({ title, description, category, remoteDocs, otherDoc
     setDeletingId(sourceId);
     setDeleteError(null);
     try {
-      const res = await fetch(`/api/knowledge-base?source_id=${encodeURIComponent(sourceId)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/knowledge-base?${new URLSearchParams({ category, source_id: sourceId })}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to delete from the knowledge base');
       onDeleted(sourceId);
@@ -208,24 +208,6 @@ export function UploadPanel({ title, description, category, remoteDocs, otherDoc
           </ul>
         )}
       </div>
-
-      {otherDocs.length > 0 && (
-        <div className="doc-section">
-          <h4>Other documents</h4>
-          <p className="muted-note">Added outside this console, so they aren&rsquo;t tagged to a section.</p>
-          <ul className="doc-list">
-            {otherDocs.map((doc) => (
-              <DocRow
-                key={doc.sourceId}
-                name={doc.displayName}
-                meta={[formatSize(doc.fileSize), 'Live'].filter(Boolean).join(' · ')}
-                onRemove={canEdit ? () => removeRemote(doc.sourceId) : undefined}
-                removing={deletingId === doc.sourceId}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
 
       {canEdit && deleteError && <InlineError>{deleteError}</InlineError>}
     </section>

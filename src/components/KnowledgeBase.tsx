@@ -43,9 +43,10 @@ export function KnowledgeBase({ canEdit }: KnowledgeBaseProps) {
   };
 
   const handleDeleted = (sourceId: string) => setSources((prev) => prev.filter((s) => s.sourceId !== sourceId));
+  const handleUploaded = (category: string, categorySources: KnowledgeBaseSourceInfo[]) =>
+    setSources((prev) => [...prev.filter((s) => s.category !== category), ...categorySources]);
 
   const active = categories.find((c) => c.key === activeKey) ?? categories[0];
-  const otherDocs = sources.filter((s) => s.category === null);
   const countFor = (key: string) => sources.filter((s) => s.category === key).length;
 
   return (
@@ -96,9 +97,8 @@ export function KnowledgeBase({ canEdit }: KnowledgeBaseProps) {
             description={active.uploadDescription}
             category={active.key}
             remoteDocs={sources.filter((s) => s.category === active.key)}
-            otherDocs={otherDocs}
             canEdit={canEdit}
-            onUploaded={setSources}
+            onUploaded={(categorySources) => handleUploaded(active.key, categorySources)}
             onDeleted={handleDeleted}
           />
           <aside className="stack">
@@ -113,15 +113,6 @@ export function KnowledgeBase({ canEdit }: KnowledgeBaseProps) {
                     <b>{countFor(c.key)}</b>
                   </li>
                 ))}
-                {otherDocs.length > 0 && (
-                  <li>
-                    <span>
-                      <Icon name="file" size={15} />
-                      Other documents
-                    </span>
-                    <b>{otherDocs.length}</b>
-                  </li>
-                )}
               </ul>
             </Card>
             <div className="tip-card">

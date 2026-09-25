@@ -9,6 +9,7 @@ import { getActiveClient } from '@/clients';
 import { PRODUCT } from '@/config/product';
 import { DEFAULT_LOGIN } from './auth';
 import type { CallWindow, DepartmentTransferInput, KnowledgeBaseSourceInfo, LiveRouting, RetellRawCall } from './retell';
+import { KB_LAST_SOURCE_MESSAGE } from './retell';
 
 export const DEMO_CREDENTIALS = DEFAULT_LOGIN;
 
@@ -264,7 +265,6 @@ function kbStore(): KnowledgeBaseSourceInfo[] {
         seeded.push({ sourceId: `demo_${c.key}_${seeded.length}`, category: c.key, displayName: name, fileUrl: null, fileSize: 180_000 + seeded.length * 97_000 });
       }
     }
-    seeded.push({ sourceId: 'demo_other_0', category: null, displayName: 'Emergency procedures.pdf', fileUrl: null, fileSize: 412_000 });
     globalStore.__nuvaDemoKb = seeded;
   }
   return globalStore.__nuvaDemoKb;
@@ -279,11 +279,15 @@ export function addDemoKb(category: string, files: File[]): KnowledgeBaseSourceI
   for (const f of files) {
     store.push({ sourceId: `demo_${Date.now()}_${store.length}`, category, displayName: f.name, fileUrl: null, fileSize: f.size });
   }
-  return [...store];
+  return store.filter((s) => s.category === category);
 }
 
-export function deleteDemoKb(sourceId: string): void {
+/** Like Retell, refuses to empty a category's knowledge base. */
+export function deleteDemoKb(category: string, sourceId: string): void {
   const store = kbStore();
+  if (store.filter((s) => s.category === category).length <= 1) {
+    throw new Error(KB_LAST_SOURCE_MESSAGE);
+  }
   const i = store.findIndex((s) => s.sourceId === sourceId);
   if (i >= 0) store.splice(i, 1);
 }

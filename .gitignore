@@ -41,3 +41,18 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 deploy/logs/
+
+# windows / editors
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# deploy bundles (contain .env.local)
+*.zip
+
+# python virtual environments
+venv/
+.venv/
+env/
+__pycache__/
