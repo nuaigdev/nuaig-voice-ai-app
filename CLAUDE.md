@@ -28,7 +28,7 @@ The product is **NuVA** (always written exactly like that). The vendor is **NuAI
 - The server layout (`src/app/layout.tsx`) passes the active config to `ClientConfigProvider`, and client components read it with `useClient()`. Don't import `@/clients` (the registry) from client components. Import `@/clients/categories` or types instead, so other clients' configs don't end up in the bundle.
 - **Client integrations** live in the client config and must match that client's live Retell agent exactly:
   - `integrations.retell.toolCategories` maps Retell tool names to call categories.
-  - `knowledgeBase.categories[].key` is stored as a `[key] ` filename prefix on Retell KB sources, so renaming a key orphans existing uploads.
+  - Each `knowledgeBase.categories[]` entry is its own Retell knowledge base, whose ID is read from the `RETELL_KB_<KEY>` env var (e.g. `RETELL_KB_MENU`); a document's category is the KB it lives in. All of them must also be linked to the agent's LLM for the agent to use them. Old `[key] ` filename prefixes from the single-KB days are stripped for display only.
   - `departments` is the starting list for Call Routing.
 - Never hardcode a client name, logo, category, or department in components. Add it to the config shape instead.
 
@@ -57,6 +57,7 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 - The department list is written to the agent LLM's single `transfer_call` tool as one `inferred` destination with a generated prompt (`syncDepartmentTransfers`). `getLiveRouting` parses that prompt back (`parseTransferPrompt`), so the line format in `buildTransferPrompt` must stay parseable. A tool set up elsewhere comes back as `unmanaged`, and Call Routing requires an explicit opt-in before overwriting it.
 - `retellFetch` also retries 429s, honoring `Retry-After`.
 - After a KB upload, the code polls `get-knowledge-base`, because Retell's add response is stale.
+- Retell refuses to delete a KB's last source; `deleteKnowledgeBaseSource` turns that into "upload the replacement first" (`KB_LAST_SOURCE_MESSAGE`).
 
 **Demo mode** (`src/lib/demo.ts`). `isDemoMode()` requires both `NODE_ENV === 'development'` and `NUVA_DEMO=1`, so it can never turn on in a production build. Every data route handler checks it before calling Retell (sign-in is unchanged):
 - `/api/calls` runs generated `RetellRawCall` fixtures through `buildCallsDashboard` (the same pipeline as live data)

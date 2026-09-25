@@ -71,12 +71,13 @@ export async function DELETE(req: NextRequest) {
   if (!sourceId) {
     return NextResponse.json({ error: '"source_id" query param is required' }, { status: 400 });
   }
-  if (isDemoMode()) {
-    deleteDemoKb(sourceId);
-    return NextResponse.json({ ok: true });
+  const category = req.nextUrl.searchParams.get('category');
+  if (!isKbCategory(category)) {
+    return NextResponse.json({ error: `"category" must be one of ${kbCategoryKeys().join(', ')}` }, { status: 400 });
   }
   try {
-    await deleteKnowledgeBaseSource(sourceId);
+    if (isDemoMode()) deleteDemoKb(category, sourceId);
+    else await deleteKnowledgeBaseSource(category, sourceId);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error deleting from the knowledge base';

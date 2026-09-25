@@ -2704,10 +2704,6 @@ tr:hover .row-go {
   color: var(--text-3);
 }
 
-.doc-section .muted-note {
-  margin: -6px 0 10px;
-}
-
 .doc-section .empty-note {
   padding: 18px;
   border-radius: var(--radius);

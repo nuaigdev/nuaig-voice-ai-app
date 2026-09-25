@@ -755,13 +755,11 @@ export async function syncDepartmentTransfers(
 }
 
 // --- Knowledge base sync -----------------------------------------------
-// The Knowledge Base screen has one upload tab per client KB category (for
-// Seabury: menu, community, events) but Retell's knowledge base is a single
-// flat list of sources with no category field. Each upload is tagged with a
-// "[category] " filename prefix so the UI can filter the live source list
-// back into its tabs; sources without a recognized prefix (e.g. uploaded directly in the
-// Retell dashboard) come back with category: null and are surfaced as
-// "other" documents rather than silently hidden.
+// Each client KB category (for Seabury: menu, community, events) is its own
+// Retell knowledge base, whose ID comes from the RETELL_KB_<KEY> env var
+// (e.g. RETELL_KB_MENU). A source's category is simply the KB it lives in.
+// Files uploaded before the split were tagged with a "[category] " filename
+// prefix; that prefix is stripped for display but no longer means anything.
 
 /** A client KB category key (see ClientConfig.knowledgeBase). */
 export type KbCategory = string;
@@ -772,7 +770,7 @@ export function kbCategoryKeys(): string[] {
 
 export interface KnowledgeBaseSourceInfo {
   sourceId: string;
-  category: KbCategory | null;
+  category: KbCategory;
   displayName: string;
   fileUrl: string | null;
   fileSize: number | null;
@@ -799,53 +797,52 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function parseCategoryFromName(rawName: string): { category: KbCategory | null; displayName: string } {
+/** Drops a legacy "[category] " prefix from files uploaded when all categories shared one KB. */
+function stripLegacyPrefix(rawName: string): string {
   const prefixRe = new RegExp(`^\\[(${kbCategoryKeys().map(escapeRegExp).join('|')})\\]\\s*`, 'i');
-  const match = rawName.match(prefixRe);
-  if (!match) return { category: null, displayName: rawName };
-  return { category: match[1].toLowerCase() as KbCategory, displayName: rawName.slice(match[0].length) || rawName };
+  return rawName.replace(prefixRe, '') || rawName;
 }
 
-function taggedFilename(category: KbCategory, filename: string): string {
-  return `[${category}] ${filename}`;
+function sourceName(s: RetellKnowledgeBaseSource): string {
+  return s.filename || s.title || s.url || s.source_id;
 }
 
-function mapKbSource(s: RetellKnowledgeBaseSource): KnowledgeBaseSourceInfo {
-  const rawName = s.filename || s.title || s.url || s.source_id;
-  const { category, displayName } = parseCategoryFromName(rawName);
+function mapKbSource(category: KbCategory, s: RetellKnowledgeBaseSource): KnowledgeBaseSourceInfo {
   return {
     sourceId: s.source_id,
     category,
-    displayName,
+    displayName: stripLegacyPrefix(sourceName(s)),
     fileUrl: s.file_url ?? null,
     fileSize: s.file_size ?? null,
   };
 }
 
-async function getKnowledgeBaseId(): Promise<string> {
-  const agentId = defaultAgentId();
-  if (!agentId) throw new Error('AGENT_ID is not set. Add it to .env.local.');
-  const llmId = await getAgentLlmId(agentId);
-  const llm = await retellFetch<{ knowledge_base_ids?: string[] | null }>(`/get-retell-llm/${llmId}`);
-  const kbId = llm.knowledge_base_ids?.[0];
-  if (!kbId) throw new Error('This agent has no knowledge base linked (knowledge_base_ids is empty).');
+function knowledgeBaseIdFor(category: KbCategory): string {
+  if (!kbCategoryKeys().includes(category)) throw new Error(`Unknown knowledge base category "${category}".`);
+  const envName = `RETELL_KB_${category.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+  const kbId = process.env[envName];
+  if (!kbId) throw new Error(`${envName} is not set. Add the "${category}" knowledge base ID to .env.local.`);
   return kbId;
 }
 
-export async function listKnowledgeBaseSources(): Promise<KnowledgeBaseSourceInfo[]> {
-  const kbId = await getKnowledgeBaseId();
-  const kb = await retellFetch<RetellKnowledgeBaseResponse>(`/get-knowledge-base/${kbId}`);
-  return (kb.knowledge_base_sources || []).map(mapKbSource);
+async function listCategorySources(category: KbCategory): Promise<KnowledgeBaseSourceInfo[]> {
+  const kb = await retellFetch<RetellKnowledgeBaseResponse>(`/get-knowledge-base/${knowledgeBaseIdFor(category)}`);
+  return (kb.knowledge_base_sources || []).map((s) => mapKbSource(category, s));
 }
 
+export async function listKnowledgeBaseSources(): Promise<KnowledgeBaseSourceInfo[]> {
+  const perCategory = await Promise.all(kbCategoryKeys().map(listCategorySources));
+  return perCategory.flat();
+}
+
+/** Uploads into the category's KB and returns that category's sources (not the other categories'). */
 export async function addKnowledgeBaseFiles(category: KbCategory, files: File[]): Promise<KnowledgeBaseSourceInfo[]> {
-  const kbId = await getKnowledgeBaseId();
+  const kbId = knowledgeBaseIdFor(category);
   const form = new FormData();
   const uploadedNames = new Set<string>();
   for (const file of files) {
-    const name = taggedFilename(category, file.name);
-    form.append('knowledge_base_files', file, name);
-    uploadedNames.add(name);
+    form.append('knowledge_base_files', file, file.name);
+    uploadedNames.add(file.name);
   }
   await retellFetch<RetellKnowledgeBaseResponse>(
     `/add-knowledge-base-sources/${kbId}`,
@@ -858,19 +855,31 @@ export async function addKnowledgeBaseFiles(category: KbCategory, files: File[])
   // The add-sources response body reflects a stale pre-upload snapshot, not
   // the files just added - poll get-knowledge-base briefly until they show
   // up rather than handing the caller a list that's missing their upload.
+  let sources: RetellKnowledgeBaseSource[] = [];
   for (let attempt = 1; attempt <= 5; attempt++) {
     const kb = await retellFetch<RetellKnowledgeBaseResponse>(`/get-knowledge-base/${kbId}`);
-    const sources = kb.knowledge_base_sources || [];
-    const names = new Set(sources.map((s) => s.filename || s.title || s.url || s.source_id));
-    if ([...uploadedNames].every((n) => names.has(n))) return sources.map(mapKbSource);
+    sources = kb.knowledge_base_sources || [];
+    const names = new Set(sources.map(sourceName));
+    if ([...uploadedNames].every((n) => names.has(n))) break;
     if (attempt < 5) await sleep(1000 * attempt);
   }
-  // Upload call itself succeeded; indexing is just still catching up. Return
-  // whatever the last poll saw rather than fail a request that did work.
-  return listKnowledgeBaseSources();
+  // If indexing is still catching up, return whatever the last poll saw
+  // rather than fail a request whose upload did work.
+  return sources.map((s) => mapKbSource(category, s));
 }
 
-export async function deleteKnowledgeBaseSource(sourceId: string): Promise<void> {
-  const kbId = await getKnowledgeBaseId();
-  await retellFetch(`/delete-knowledge-base-source/${kbId}/source/${sourceId}`, { method: 'DELETE' });
+export const KB_LAST_SOURCE_MESSAGE =
+  "This is the only document in this section, and Retell doesn't allow an empty knowledge base. Upload its replacement first, then remove this one.";
+
+export async function deleteKnowledgeBaseSource(category: KbCategory, sourceId: string): Promise<void> {
+  const kbId = knowledgeBaseIdFor(category);
+  try {
+    await retellFetch(`/delete-knowledge-base-source/${kbId}/source/${sourceId}`, { method: 'DELETE' });
+  } catch (err) {
+    // Retell won't let a knowledge base go empty.
+    if (err instanceof Error && err.message.includes('cannot delete the last source')) {
+      throw new Error(KB_LAST_SOURCE_MESSAGE);
+    }
+    throw err;
+  }
 }

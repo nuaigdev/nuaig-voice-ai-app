@@ -29,7 +29,7 @@ export interface DepartmentSeed {
 }
 
 export interface KnowledgeBaseCategory {
-  /** Stored as a "[key] " filename prefix on Retell KB sources - don't rename once live. */
+  /** Also names the env var holding this category's Retell knowledge base ID: RETELL_KB_<KEY>. */
   key: string;
   label: string;
   uploadTitle: string;
