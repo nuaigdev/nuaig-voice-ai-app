@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { DepartmentCard } from './DepartmentCard';
+import { useCallback, useEffect, useState } from 'react';
+import { DepartmentTable, type DepartmentEdit } from './DepartmentTable';
 import { Icon } from './icons';
 import { useClient } from './providers/ClientConfigProvider';
-import { ErrorState, InlineError, PageHeader, StateCard } from './ui';
+import { ErrorState, InlineError, PageHeader } from './ui';
 import { PRODUCT } from '@/config/product';
 import type { DepartmentTransferInput, LiveRouting } from '@/lib/retell';
 import type { Department } from '@/types';
@@ -26,70 +26,33 @@ async function syncDepartmentsToAgent(list: Department[]): Promise<void> {
   if (!res.ok) throw new Error(data.error || 'Failed to sync with the voice agent');
 }
 
-function AddDepartmentForm({ onAdd, onCancel }: { onAdd: (name: string, phone: string, description: string) => Promise<void>; onCancel: () => void }) {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [description, setDescription] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await onAdd(name.trim(), phone.trim(), description.trim());
-    } finally {
-      setSaving(false);
-    }
+function newRow(): Department {
+  return {
+    id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name: '',
+    description: '',
+    phone: '',
+    keywords: [],
+    icon: 'headset',
+    tone: 'slate',
   };
-
-  return (
-    <form className="card dept-card dept-new" onSubmit={submit}>
-      <header className="card-head">
-        <div>
-          <h3>New department</h3>
-          <p>Add keywords after it&rsquo;s created.</p>
-        </div>
-      </header>
-      <div className="field">
-        <label htmlFor="new-dept-name">Name</label>
-        <input id="new-dept-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Housekeeping" required autoFocus />
-      </div>
-      <div className="field">
-        <label htmlFor="new-dept-desc">Description</label>
-        <input id="new-dept-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this team handles" />
-      </div>
-      <div className="field">
-        <label htmlFor="new-dept-phone">Transfer phone number</label>
-        <input id="new-dept-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" required />
-      </div>
-      <div className="card-actions">
-        <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
-          Cancel
-        </button>
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? (
-            <>
-              <span className="spinner" /> Syncing…
-            </>
-          ) : (
-            'Add & sync'
-          )}
-        </button>
-      </div>
-    </form>
-  );
 }
 
 interface SettingsProps {
   canEdit: boolean;
 }
 
-/** Live departments, decorated with icon/tone from the client config when the name matches a configured one. */
+/** Live departments, decorated with icon/tone from the client config when a configured row matches. */
 function fromLive(live: DepartmentTransferInput[], seeds: Department[]): Department[] {
+  const norm = (v: string | undefined) => (v ?? '').trim().toLowerCase();
   return live.map((d, i) => {
-    const seed = seeds.find((s) => s.name.trim().toLowerCase() === d.name.trim().toLowerCase());
+    // Rows can share a name (one person, several reasons to call), so narrow by description before
+    // falling back to the first same-name seed. The id stays unique per row whatever matched: it is
+    // the React key and the handle updateRow/removeRow edit by, and it never goes to Retell.
+    const sameName = seeds.filter((s) => norm(s.name) === norm(d.name));
+    const seed = sameName.find((s) => norm(s.description) === norm(d.description)) ?? sameName[0];
     return {
-      id: seed?.id ?? `live-${i}`,
+      id: `${seed?.id ?? 'live'}-${i}`,
       name: d.name,
       description: d.description ?? seed?.description ?? '',
       phone: d.phone,
@@ -100,49 +63,15 @@ function fromLive(live: DepartmentTransferInput[], seeds: Department[]): Departm
   });
 }
 
-function RoutingBanner({
-  routing,
-  canEdit,
-  unlocked,
-  onUnlock,
-}: {
-  routing: LiveRouting;
-  canEdit: boolean;
-  unlocked: boolean;
-  onUnlock: () => void;
-}) {
-  if (routing.status === 'managed') return null;
-  const missing = routing.status === 'missing';
-  return (
-    <div className="routing-banner" role="status">
-      <Icon name="alert" size={18} />
-      <div>
-        <b>{missing ? 'Call transfers aren’t set up on the agent yet' : `This agent’s transfers were set up outside ${PRODUCT.name}`}</b>
-        <p>
-          {missing
-            ? 'The departments below are a starting list and are not live. Check every number, then save to publish them.'
-            : `${routing.summary ?? ''} Saving here will replace that setup with the departments below.`}
-        </p>
-      </div>
-      {canEdit && !unlocked && (
-        <button className="btn btn-secondary btn-sm" onClick={onUnlock}>
-          {missing ? 'Review and publish' : 'Replace with this list'}
-        </button>
-      )}
-    </div>
-  );
-}
-
 export function Settings({ canEdit }: SettingsProps) {
   const client = useClient();
   const [routing, setRouting] = useState<LiveRouting | null>(null);
   const [depts, setDepts] = useState<Department[]>([]);
+  const [savedDepts, setSavedDepts] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // Editing an agent whose routing wasn't written here needs an explicit opt-in, so a stray Save can't clobber it.
-  const [unlocked, setUnlocked] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const fetchRouting = useCallback(() => {
     fetch('/api/departments')
@@ -153,7 +82,9 @@ export function Settings({ canEdit }: SettingsProps) {
       })
       .then((live) => {
         setRouting(live);
-        setDepts(live.status === 'managed' ? fromLive(live.departments, client.departments) : client.departments);
+        const initial = live.status === 'managed' ? fromLive(live.departments, client.departments) : client.departments;
+        setDepts(initial);
+        setSavedDepts(initial);
       })
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : 'Failed to read call routing'))
       .finally(() => setLoading(false));
@@ -169,39 +100,36 @@ export function Settings({ canEdit }: SettingsProps) {
     fetchRouting();
   };
 
-  const editable = canEdit && (routing?.status === 'managed' || unlocked);
+  const editable = canEdit;
+  const dirty = JSON.stringify(depts) !== JSON.stringify(savedDepts);
 
-  const publish = async (nextDepts: Department[]) => {
-    await syncDepartmentsToAgent(nextDepts);
-    setRouting({ status: 'managed', departments: nextDepts, summary: null });
-    setUnlocked(false);
+  const updateRow = (id: string, patch: Partial<DepartmentEdit>) => {
+    setDepts((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+    setSaveStatus('idle');
   };
 
-  const handleAddDepartment = async (name: string, phone: string, description: string) => {
-    const newDept: Department = {
-      id: `custom-${Date.now()}`,
-      name,
-      description: description || 'Custom department',
-      phone,
-      keywords: [],
-      icon: 'headset',
-      tone: 'slate',
-    };
-    const nextDepts = [...depts, newDept];
-    setDepts(nextDepts);
-    setAdding(false);
-    setAddError(null);
+  const addRow = () => setDepts((prev) => [...prev, newRow()]);
+
+  const removeRow = (id: string) => {
+    setDepts((prev) => prev.filter((d) => d.id !== id));
+    setSaveStatus('idle');
+  };
+
+  const handleSave = async () => {
+    setSaveStatus('saving');
+    setSaveError(null);
+    // A row needs both a destination and a phone number to go live; blanks are kept in the editor but left out of the agent prompt.
+    const ready = depts.filter((d) => d.name.trim() && d.phone.trim());
     try {
-      await publish(nextDepts);
+      await syncDepartmentsToAgent(ready);
+      setRouting({ status: 'managed', departments: ready, summary: null });
+      setSavedDepts(depts);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 1800);
     } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to sync with the voice agent');
+      setSaveStatus('error');
+      setSaveError(err instanceof Error ? err.message : 'Failed to sync with the voice agent');
     }
-  };
-
-  const handleSaveDepartment = async (id: string, phone: string, keywords: string[]) => {
-    const nextDepts = depts.map((d) => (d.id === id ? { ...d, phone, keywords } : d));
-    setDepts(nextDepts);
-    await publish(nextDepts);
   };
 
   const livePill =
@@ -219,19 +147,11 @@ export function Settings({ canEdit }: SettingsProps) {
       <PageHeader
         eyebrow={`${client.name} · Agent configuration`}
         title="Call Routing"
-        description={`${PRODUCT.name} transfers a caller to the right team based on what they need. Each department's number and trigger keywords go live on the agent when you save.`}
+        description={`${PRODUCT.name} transfers a caller to the right person based on what they need. Each row's destination and phone number go live on the agent when you save.`}
         actions={
           <>
             {livePill}
-            {canEdit ? (
-              editable &&
-              !adding && (
-                <button className="btn btn-primary" onClick={() => setAdding(true)}>
-                  <Icon name="plus" size={16} />
-                  Add department
-                </button>
-              )
-            ) : (
+            {!canEdit && (
               <span className="pill">
                 <Icon name="lock" size={14} />
                 View only
@@ -242,34 +162,37 @@ export function Settings({ canEdit }: SettingsProps) {
       />
 
       {loading && (
-        <div className="dept-grid" aria-busy="true">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="skel" style={{ height: 300 }} />
-          ))}
-        </div>
+        <div className="card card-flush dept-table-card skel" style={{ height: 420 }} aria-busy="true" />
       )}
       {!loading && loadError && <ErrorState message={loadError} onRetry={retry} />}
 
       {!loading && !loadError && routing && (
         <>
-          <RoutingBanner routing={routing} canEdit={canEdit} unlocked={unlocked} onUnlock={() => setUnlocked(true)} />
-          {addError && <InlineError>Added here, but syncing with the voice agent failed: {addError}</InlineError>}
-          {depts.length === 0 && !adding && (
-            <StateCard icon="route" title="No departments yet">
-              {editable ? 'Add a department to start routing calls to staff.' : 'No transfer departments are configured on the agent.'}
-            </StateCard>
+          <DepartmentTable departments={depts} editable={editable} onChange={updateRow} onRemove={removeRow} onAddRow={addRow} />
+
+          {editable && (
+            <div className="dept-save-bar">
+              {saveStatus === 'saved' && (
+                <span className="saved-note">
+                  <Icon name="check" size={15} strokeWidth={2.4} /> Live on agent
+                </span>
+              )}
+              {saveStatus === 'error' && saveError && <InlineError>{saveError}</InlineError>}
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={saveStatus === 'saving' || (!dirty && saveStatus !== 'error')}
+              >
+                {saveStatus === 'saving' ? (
+                  <>
+                    <span className="spinner" /> Syncing…
+                  </>
+                ) : (
+                  'Save changes'
+                )}
+              </button>
+            </div>
           )}
-          <div className="dept-grid">
-            {editable && adding && <AddDepartmentForm onAdd={handleAddDepartment} onCancel={() => setAdding(false)} />}
-            {depts.map((dept) => (
-              <DepartmentCard
-                key={dept.id}
-                department={dept}
-                canEdit={editable}
-                onSave={(phone, keywords) => handleSaveDepartment(dept.id, phone, keywords)}
-              />
-            ))}
-          </div>
         </>
       )}
     </div>

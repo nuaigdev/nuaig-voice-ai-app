@@ -258,6 +258,7 @@ function kbStore(): KnowledgeBaseSourceInfo[] {
       menu: ['Weekly dining menu.pdf', 'Dietary options guide.docx'],
       community: ['Resident handbook 2026.pdf', 'Amenity hours.pdf'],
       events: ['September activities calendar.pdf'],
+      directions: ['Campus map and directions.pdf'],
     };
     const seeded: KnowledgeBaseSourceInfo[] = [];
     for (const c of getActiveClient().knowledgeBase.categories) {

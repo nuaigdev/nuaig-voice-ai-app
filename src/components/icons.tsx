@@ -158,6 +158,15 @@ const PATHS = {
   ),
   inbound: <path d="M17 7 7 17M16 17H7V8" />,
   outbound: <path d="M7 17 17 7M8 7h9v9" />,
+  edit: <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z" />,
+  trash: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M10 11v6M14 11v6" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;

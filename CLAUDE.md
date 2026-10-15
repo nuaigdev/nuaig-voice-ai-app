@@ -12,10 +12,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev              # Next dev server on http://localhost:3000
 npm run dev:demo         # same, with NUVA_DEMO=1: generated sample calls, no Retell (login is the same)
 npm run build            # production build (also the main type-check)
+npm run start            # production server (what the deploy scripts run)
 npm run lint             # eslint (flat config, eslint-config-next; includes react-hooks/set-state-in-effect)
 ```
 
 The project has no test framework and no tests. Env vars are listed in `.env.example`; copy it to `.env.local`.
+
+## Branches
+
+`main` is the product build; `seabury-prod` is the branch deployed to Seabury, where the NuVA/NuAIg marks are taken out of the chrome (header is the client logo alone, footer is "Voice concierge for <client>") and the login defaults are Seabury's. `PRODUCT.name` still appears in body copy on both. Both branches carry their own copy of this file, so keep a change on the branch it describes.
 
 ## Naming
 
@@ -23,7 +28,7 @@ The product is **NuVA** (always written exactly like that). The vendor is **NuAI
 
 ## Product vs. client (white-labeling)
 
-- **Product level** is identical for every deployment: `src/config/product.ts` (NuVA name, NuAIg vendor info) and `public/brand/` (NuAIg logos).
+- **Product level** is identical for every deployment: `src/config/product.ts` (NuVA name, NuAIg vendor info). On `main` there is also a `public/brand/` with the NuAIg logos; `seabury-prod` drops it along with the vendor mark.
 - **Client level** is per community: `src/clients/<id>.ts`, typed by `src/clients/types.ts`, with assets in `public/clients/<id>/`. Each deployment serves one client, selected by `CLIENT_ID`. `getActiveClient()` in `src/clients/index.ts` reads it on the server only.
 - The server layout (`src/app/layout.tsx`) passes the active config to `ClientConfigProvider`, and client components read it with `useClient()`. Don't import `@/clients` (the registry) from client components. Import `@/clients/categories` or types instead, so other clients' configs don't end up in the bundle.
 - **Client integrations** live in the client config and must match that client's live Retell agent exactly:
@@ -38,7 +43,7 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 
 **Single-page client shell.** `src/app/page.tsx` renders only `ConsoleApp`, which contains:
 - session restore (`/api/auth/me`) and the login screen
-- `AppHeader`: top navigation led by the NuVA wordmark and then the client logo, a sync/refresh button, the theme toggle, and a user menu with Account and Sign out
+- `AppHeader`: the client logo, top navigation, a sync/refresh button, the theme toggle, and a user menu with Account and Sign out
 - `AppFooter`
 - view switching through `ViewKey` state; there are no Next routes per view
 - the date range shared by Overview and Call Logs
@@ -54,7 +59,7 @@ This is an admin console for a Retell AI voice agent. The app has **no database 
 - `getCallsDashboard(window)` lists only calls whose `start_timestamp` is in the window (`/v3/list-calls` range filter, max `MAX_WINDOW_DAYS`), then fetches each call's detail (`/v2/get-call`, 8 at a time) because the list omits transcripts and tool calls. Details of settled calls are cached in memory per call ID, so refreshes only fetch new calls. It then flattens them into `FlatCallRow` and builds the summaries. Tool names come from `tool_calls` or, failing that, `transcript_with_tool_calls`.
 - `/api/calls?from=&to=` (epoch ms, parsed by `lib/callWindow.ts`) removes `cost_usd` before responding (`CallRow = Omit<FlatCallRow, 'cost_usd'>`). `/api/calls/export` (admin-only, because its Summary sheet has costs) builds the Excel workbook in memory (`lib/excel.ts`). Nothing is written to disk.
 - `/api/download-recording?call_id=` looks the call up and streams the recording URL Retell reports for it, and only for this client's `AGENT_ID`. It never fetches a URL supplied by the browser.
-- The department list is written to the agent LLM's single `transfer_call` tool as one `inferred` destination with a generated prompt (`syncDepartmentTransfers`). `getLiveRouting` parses that prompt back (`parseTransferPrompt`), so the line format in `buildTransferPrompt` must stay parseable. A tool set up elsewhere comes back as `unmanaged`, and Call Routing requires an explicit opt-in before overwriting it.
+- The department list is written to the agent LLM's single `transfer_call` tool as one `inferred` destination with a generated prompt (`syncDepartmentTransfers`). `getLiveRouting` parses that prompt back (`parseTransferPrompt`), so the line format in `buildTransferPrompt` must stay parseable. A tool set up elsewhere comes back as `unmanaged`, which shows as a "Not live" pill; Call Routing edits and saves the rows either way, overwriting whatever the agent had.
 - `retellFetch` also retries 429s, honoring `Retry-After`.
 - After a KB upload, the code polls `get-knowledge-base`, because Retell's add response is stale.
 - Retell refuses to delete a KB's last source; `deleteKnowledgeBaseSource` turns that into "upload the replacement first" (`KB_LAST_SOURCE_MESSAGE`).
@@ -74,6 +79,15 @@ When you add a route that touches Retell, add a demo branch as well.
 - Use tokens (`--brand`, `--surface`, `--tone-*`, …), never raw colors. Config `Tone` keys map to `--tone-<key>`; use `toneVar()` from `components/ui.tsx`.
 - **Components.**
   - Icons: `components/icons.tsx` (`<Icon name=…>`). Config files refer to icons by `IconName`.
-  - Brand marks: `ClientLogo`, `NuaigLogo`, `NuvaMark` in `components/brand.tsx`. Light/dark logo variants are both rendered and swapped in CSS.
-  - Page building blocks: `PageHeader`, `Card`, `ErrorState`, `InlineError` in `components/ui.tsx`.
+  - Brand marks: `ClientLogo` and `NuvaMark` in `components/brand.tsx`. Light/dark logo variants are both rendered and swapped in CSS.
+  - Page building blocks: `PageHeader`, `Card`, `StateCard`, `ErrorState`, `EmptyNote`, `InlineError` in `components/ui.tsx`.
   - Charts are hand-rolled SVG in `components/charts.tsx`.
+
+## Deployment
+
+`deploy/windows/` targets a Windows VM running the Node server directly; there is no container or CI.
+- `make-zip.cmd` (run on the dev machine) tars the project *including `.env.local`* minus `node_modules`/`.next`/`.git`, so the zip is a secret.
+- `setup.cmd` (on the VM, after each unzip) requires `.env.local` in the project root, then `npm ci && npm run build`.
+- `start.cmd` runs `npm start` on `PORT` (default 3000), appending to `deploy/logs/nuva.log`.
+
+Serving over plain http off localhost needs `AUTH_COOKIE_INSECURE=1`, or the session cookie won't stick.

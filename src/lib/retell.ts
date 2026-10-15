@@ -755,7 +755,7 @@ export async function syncDepartmentTransfers(
 }
 
 // --- Knowledge base sync -----------------------------------------------
-// Each client KB category (for Seabury: menu, community, events) is its own
+// Each client KB category (for Seabury: menu, community, events, directions) is its own
 // Retell knowledge base, whose ID comes from the RETELL_KB_<KEY> env var
 // (e.g. RETELL_KB_MENU). A source's category is simply the KB it lives in.
 // Files uploaded before the split were tagged with a "[category] " filename
