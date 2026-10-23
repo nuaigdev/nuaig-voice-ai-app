@@ -91,7 +91,11 @@ async function retellFetch<T>(path: string, init?: RequestInit, opts?: RetellFet
       clearTimeout(timer);
     }
 
-    if (res.ok) return (await res.json()) as T;
+    if (res.ok) {
+      // publish-agent-version (and some other calls) return no body on success.
+      const text = await res.text();
+      return (text ? JSON.parse(text) : {}) as T;
+    }
 
     const body = await res.text().catch(() => '');
     if (isRetryableStatus(res.status) && attempt < maxAttempts) {
@@ -569,7 +573,27 @@ export function buildCallsDashboard(
 
 interface RetellAgentSummary {
   agent_id: string;
-  response_engine: { type: string; llm_id?: string | null };
+  version: number;
+  is_published?: boolean | null;
+  response_engine: { type: string; llm_id?: string | null; version?: number | null };
+}
+
+interface RetellAgentBinding {
+  agent_id: string;
+  weight: number;
+  agent_version?: string | number | null;
+}
+
+interface RetellPhoneNumberResponse {
+  phone_number: string;
+  inbound_agents?: RetellAgentBinding[] | null;
+  outbound_agents?: RetellAgentBinding[] | null;
+}
+
+interface RetellPhoneNumberListResponse {
+  items: RetellPhoneNumberResponse[];
+  has_more: boolean;
+  pagination_key?: string | null;
 }
 
 interface RetellLlmTransferDestination {
@@ -612,76 +636,178 @@ export interface DepartmentTransferInput {
   keywords: string[];
 }
 
-async function getAgentLlmId(agentId: string): Promise<string> {
-  const agent = await retellFetch<RetellAgentSummary>(`/get-agent/${agentId}`);
+/**
+ * Fetches the agent, optionally pinned to a specific version (a version
+ * number, "latest", "latest_published", or a tag - whatever a phone
+ * number's inbound_agents entry can carry). Omit `version` for the plain
+ * "latest" default Retell uses when no version is given.
+ */
+async function getAgentInfo(
+  agentId: string,
+  version?: string | number
+): Promise<{ llmId: string; llmVersion?: number; agentVersion: number }> {
+  const query = version !== undefined ? `?version=${encodeURIComponent(String(version))}` : '';
+  const agent = await retellFetch<RetellAgentSummary>(`/get-agent/${agentId}${query}`);
   if (agent.response_engine?.type !== 'retell-llm' || !agent.response_engine.llm_id) {
     throw new Error(`Agent ${agentId} is not backed by a Retell LLM; cannot sync the transfer_call tool.`);
   }
-  return agent.response_engine.llm_id;
+  return {
+    llmId: agent.response_engine.llm_id,
+    llmVersion: agent.response_engine.version ?? undefined,
+    agentVersion: agent.version,
+  };
+}
+
+/**
+ * The version a phone number's inbound_agents entry actually resolves calls
+ * against for this agent - a fixed version number, "latest" (most recently
+ * created, draft or not), "latest_published", or a tag name. Found by
+ * scanning every phone number for one bound to this agent. Falls back to
+ * "latest_published" when no bound number is found, since that's the sane
+ * reading for "what's actually live" when the lookup itself can't say.
+ */
+async function boundAgentVersion(agentId: string): Promise<string | number> {
+  const list = await retellFetch<RetellPhoneNumberListResponse>('/v2/list-phone-numbers');
+  for (const phone of list.items || []) {
+    const match = (phone.inbound_agents || []).find((a) => a.agent_id === agentId);
+    if (match) return match.agent_version ?? 'latest_published';
+  }
+  return 'latest_published';
+}
+
+/**
+ * Re-point every phone number bound to this agent at the version just
+ * published. Retell phone numbers can be pinned to a fixed version number in
+ * the dashboard (as opposed to "latest_published", which would track new
+ * publishes on its own) - when that's how a number is set up, publishing a
+ * new version changes nothing for callers until something moves the pin
+ * forward, so this keeps the pin from going stale after every sync.
+ * Numbers already pointed at this version, or bound to a different agent,
+ * are left untouched.
+ */
+async function pinPhoneNumbersToVersion(agentId: string, version: number): Promise<void> {
+  const list = await retellFetch<RetellPhoneNumberListResponse>('/v2/list-phone-numbers');
+
+  const repoint = (agents: RetellAgentBinding[] | null | undefined): RetellAgentBinding[] | null => {
+    if (!agents || !agents.some((a) => a.agent_id === agentId && a.agent_version !== version)) return null;
+    return agents.map((a) => (a.agent_id === agentId ? { ...a, agent_version: version } : a));
+  };
+
+  for (const phone of list.items || []) {
+    const inbound = repoint(phone.inbound_agents);
+    const outbound = repoint(phone.outbound_agents);
+    if (!inbound && !outbound) continue;
+
+    const body: Record<string, unknown> = {};
+    if (inbound) body.inbound_agents = inbound;
+    if (outbound) body.outbound_agents = outbound;
+
+    await retellFetch(`/update-phone-number/${encodeURIComponent(phone.phone_number)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
 }
 
 function isTransferCallTool(tool: RetellGeneralTool): tool is RetellTransferCallTool {
   return tool.type === 'transfer_call';
 }
 
+/**
+ * A published agent version is immutable - Retell rejects a PATCH to its LLM
+ * with "Cannot update published LLM" - so editing always needs a mutable
+ * draft: the latest version itself when it's still unpublished, otherwise a
+ * fresh draft forked from it via create-agent-version. Call this right
+ * before editing, since a prior sync's publish can turn today's "latest"
+ * into an immutable published version by the time of the next save.
+ */
+async function ensureEditableAgentVersion(agentId: string): Promise<{ agentVersion: number; llmId: string }> {
+  const latest = await retellFetch<RetellAgentSummary>(`/get-agent/${agentId}`);
+  if (!latest.is_published) {
+    if (latest.response_engine?.type !== 'retell-llm' || !latest.response_engine.llm_id) {
+      throw new Error(`Agent ${agentId} is not backed by a Retell LLM; cannot sync the transfer_call tool.`);
+    }
+    return { agentVersion: latest.version, llmId: latest.response_engine.llm_id };
+  }
+
+  const draft = await retellFetch<RetellAgentSummary>(`/create-agent-version/${agentId}`, {
+    method: 'POST',
+    body: JSON.stringify({ base_version: latest.version }),
+  });
+  if (draft.response_engine?.type !== 'retell-llm' || !draft.response_engine.llm_id) {
+    throw new Error(`Agent ${agentId} is not backed by a Retell LLM; cannot sync the transfer_call tool.`);
+  }
+  return { agentVersion: draft.version, llmId: draft.response_engine.llm_id };
+}
+
+/**
+ * Reads the transfer_call tool off whichever agent version the phone number
+ * actually dials, not just the latest draft - so "what's live" reflects the
+ * number, even if a newer draft hasn't been published yet, or the number is
+ * pinned to a specific version or tag.
+ */
 export async function getCurrentTransferTool(): Promise<RetellTransferCallTool | null> {
   const agentId = defaultAgentId();
   if (!agentId) throw new Error('AGENT_ID is not set. Add it to .env.local.');
-  const llmId = await getAgentLlmId(agentId);
-  const llm = await retellFetch<RetellLlmResponse>(`/get-retell-llm/${llmId}`);
+  const version = await boundAgentVersion(agentId);
+  const { llmId, llmVersion } = await getAgentInfo(agentId, version);
+  const llmQuery = llmVersion !== undefined ? `?version=${llmVersion}` : '';
+  const llm = await retellFetch<RetellLlmResponse>(`/get-retell-llm/${llmId}${llmQuery}`);
   return (llm.general_tools || []).find(isTransferCallTool) ?? null;
 }
 
 // The prompt below is also the source of truth that Call Routing reads back
-// (parseTransferPrompt), so the line format must stay parseable:
-//   - <name>[ (<description>)] -> <phone>.[ Trigger keywords: <a>, <b>.]
+// (parseTransferPrompt), so the block format must stay parseable:
+//   [ROUTE <n>]
+//   Reason: <description>
+//   Say: <name>
+//   Number: <phone>
+// one block per department, numbered in order, blank line between blocks.
 const TRANSFER_PROMPT_HEADER =
-  "Pick the phone number for the department that matches what the caller needs, using the caller's stated reason for calling and these department trigger keywords as a guide:";
-const TRANSFER_PROMPT_FOOTER = 'If no department clearly matches, ask the caller to clarify what they need before transferring.';
-const KEYWORDS_MARKER = '. Trigger keywords: ';
+  "Pick ONE route below that matches the caller's reason. Everything you say and the number you transfer to must come from that single route only.";
+const TRANSFER_PROMPT_FOOTER = 'If no route clearly matches, ask the caller to clarify before transferring.';
 
 function buildTransferPrompt(departments: DepartmentTransferInput[]): string {
   const usable = departments.filter((d) => d.phone && d.phone.trim().length > 0);
-  const lines = usable.map((d) => {
-    const kw = d.keywords.length ? `${KEYWORDS_MARKER}${d.keywords.join(', ')}.` : '.';
-    const desc = d.description ? ` (${d.description})` : '';
-    return `- ${d.name}${desc} -> ${d.phone}${kw}`;
+  const lines: string[] = [TRANSFER_PROMPT_HEADER, ''];
+  usable.forEach((d, i) => {
+    lines.push(`[ROUTE ${i + 1}]`);
+    lines.push(`Reason: ${d.description ?? ''}`);
+    lines.push(`Say: ${d.name}`);
+    lines.push(`Number: ${d.phone}`);
+    lines.push('');
   });
-  return [TRANSFER_PROMPT_HEADER, ...lines, TRANSFER_PROMPT_FOOTER].join('\n');
+  lines.push(TRANSFER_PROMPT_FOOTER);
+  return lines.join('\n');
 }
 
 /** Reverses buildTransferPrompt; returns null if the prompt wasn't written by this console. */
 export function parseTransferPrompt(prompt: string): DepartmentTransferInput[] | null {
-  const lines = prompt.split('\n').map((l) => l.trim());
-  if (lines[0] !== TRANSFER_PROMPT_HEADER) return null;
+  const lines = prompt.split('\n');
+  if ((lines[0] ?? '').trim() !== TRANSFER_PROMPT_HEADER) return null;
 
   const departments: DepartmentTransferInput[] = [];
-  for (const line of lines.slice(1)) {
-    if (!line.startsWith('- ')) continue;
-    const arrow = line.indexOf(' -> ');
-    if (arrow < 0) return null;
-    const head = line.slice(2, arrow);
-    const tail = line.slice(arrow + 4);
+  let routeNumber = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (line === TRANSFER_PROMPT_FOOTER) return departments.length ? departments : null;
 
-    const descMatch = head.match(/^(.*?) \((.*)\)$/);
-    const name = (descMatch ? descMatch[1] : head).trim();
-    const description = descMatch ? descMatch[2].trim() : undefined;
+    routeNumber += 1;
+    if (line !== `[ROUTE ${routeNumber}]`) return null;
 
-    const kwAt = tail.indexOf(KEYWORDS_MARKER);
-    const phone = (kwAt >= 0 ? tail.slice(0, kwAt) : tail.replace(/\.$/, '')).trim();
-    const keywords =
-      kwAt >= 0
-        ? tail
-            .slice(kwAt + KEYWORDS_MARKER.length)
-            .replace(/\.$/, '')
-            .split(', ')
-            .map((k) => k.trim())
-            .filter(Boolean)
-        : [];
+    const reasonMatch = (lines[++i] ?? '').trim().match(/^Reason:\s*(.*)$/);
+    const sayMatch = (lines[++i] ?? '').trim().match(/^Say:\s*(.*)$/);
+    const numberMatch = (lines[++i] ?? '').trim().match(/^Number:\s*(.*)$/);
+    if (!reasonMatch || !sayMatch || !numberMatch) return null;
+
+    const name = sayMatch[1].trim();
+    const phone = numberMatch[1].trim();
     if (!name || !phone) return null;
-    departments.push({ name, description, phone, keywords });
+
+    departments.push({ name, phone, description: reasonMatch[1].trim(), keywords: [] });
   }
-  return departments;
+  return null; // ran off the end without ever seeing the footer
 }
 
 export type LiveRoutingStatus =
@@ -721,7 +847,7 @@ export async function syncDepartmentTransfers(
 ): Promise<RetellTransferCallTool> {
   const agentId = defaultAgentId();
   if (!agentId) throw new Error('AGENT_ID is not set. Add it to .env.local.');
-  const llmId = await getAgentLlmId(agentId);
+  const { agentVersion, llmId } = await ensureEditableAgentVersion(agentId);
   const llm = await retellFetch<RetellLlmResponse>(`/get-retell-llm/${llmId}`);
   const tools = llm.general_tools ? [...llm.general_tools] : [];
 
@@ -750,6 +876,13 @@ export async function syncDepartmentTransfers(
     method: 'PATCH',
     body: JSON.stringify({ general_tools: tools }),
   });
+
+  await retellFetch(`/publish-agent-version/${agentId}`, {
+    method: 'POST',
+    body: JSON.stringify({ version: agentVersion, version_description: 'Call Routing updated via NuVA console' }),
+  });
+
+  await pinPhoneNumbersToVersion(agentId, agentVersion);
 
   return updatedTool;
 }

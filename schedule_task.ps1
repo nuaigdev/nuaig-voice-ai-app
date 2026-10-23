@@ -1,4 +1,4 @@
-# Registers (or updates) the Windows scheduled task that runs fetch_events.py.
+# Registers (or updates) the Windows scheduled task that runs scripts/fetch-events.mjs (via fetch_events_task.cmd).
 #
 # The schedule itself lives in Windows Task Scheduler, not in a file, so this
 # script is the single place to edit it: change the settings below and re-run

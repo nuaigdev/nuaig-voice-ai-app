@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:demo": "node scripts/dev-demo.mjs",
+    "fetch-events": "node scripts/fetch-events.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
