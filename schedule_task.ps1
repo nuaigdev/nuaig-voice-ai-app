@@ -8,11 +8,11 @@
 
 # ======================= EDIT THESE =======================
 
-$RunTime = "09:00"          # when to run, 24-hour HH:mm   (e.g. "07:00", "22:30")
+$RunTime = "06:00"          # when to run, 24-hour HH:mm   (e.g. "07:00", "22:30")
 
 $RunTimeZone = "Eastern Standard Time"
                             # the zone $RunTime is written in. Seabury is in
-                            # Eastern, so the events refresh is pinned to 09:00
+                            # Eastern, so the events refresh is pinned to 06:00
                             # there whatever this machine's clock says. The id
                             # covers both EST and EDT. Set to "" to mean this
                             # machine's own local time and skip conversion.
