@@ -17,7 +17,7 @@ $RunTimeZone = "Eastern Standard Time"
                             # covers both EST and EDT. Set to "" to mean this
                             # machine's own local time and skip conversion.
 
-$Repeat = "Weekly"          # "Weekly" = once a week, on $DayOfWeek
+$Repeat = "Daily"           # "Weekly" = once a week, on $DayOfWeek
                             # "Daily"  = every day at $RunTime
                             # "Once"   = one run only, at $RunTime today
 
