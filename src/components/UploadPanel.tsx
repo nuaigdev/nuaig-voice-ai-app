@@ -16,12 +16,14 @@ function DocRow({
   name,
   meta,
   pending = false,
+  downloadHref,
   onRemove,
   removing = false,
 }: {
   name: string;
   meta: string;
   pending?: boolean;
+  downloadHref?: string;
   onRemove?: () => void;
   removing?: boolean;
 }) {
@@ -34,6 +36,11 @@ function DocRow({
         <b title={name}>{name}</b>
         <span>{meta}</span>
       </div>
+      {downloadHref && (
+        <a className="icon-btn icon-btn-sm" href={downloadHref} download={name} title="Download" aria-label={`Download ${name}`}>
+          <Icon name="download" size={15} />
+        </a>
+      )}
       {onRemove && (
         <button className="icon-btn icon-btn-sm" title="Remove" aria-label={`Remove ${name}`} onClick={onRemove} disabled={removing}>
           {removing ? <span className="spinner" /> : <Icon name="x" size={15} />}
@@ -201,6 +208,11 @@ export function UploadPanel({ title, description, category, remoteDocs, canEdit,
                 key={doc.sourceId}
                 name={doc.displayName}
                 meta={[formatSize(doc.fileSize), 'Live'].filter(Boolean).join(' · ')}
+                downloadHref={
+                  doc.fileUrl
+                    ? `/api/knowledge-base/download?${new URLSearchParams({ category, source_id: doc.sourceId })}`
+                    : undefined
+                }
                 onRemove={canEdit ? () => removeRemote(doc.sourceId) : undefined}
                 removing={deletingId === doc.sourceId}
               />

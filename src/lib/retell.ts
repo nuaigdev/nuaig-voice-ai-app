@@ -1016,3 +1016,9 @@ export async function deleteKnowledgeBaseSource(category: KbCategory, sourceId: 
     throw err;
   }
 }
+
+/** Looks up one source in a category's KB, or null if it isn't there. */
+export async function getKnowledgeBaseSource(category: KbCategory, sourceId: string): Promise<KnowledgeBaseSourceInfo | null> {
+  const sources = await listCategorySources(category);
+  return sources.find((s) => s.sourceId === sourceId) ?? null;
+}
